@@ -1162,7 +1162,7 @@ function initSidekick() {
 
 function decorateMeta() {
   const { origin } = window.location;
-  const contents = document.head.querySelectorAll(`[content*=".${SLD}."]`);
+  const contents = document.head.querySelectorAll('[content*=".hlx."], [content*=".aem."]');
   contents.forEach((meta) => {
     if (meta.getAttribute('property') === 'hlx:proxyUrl' || meta.getAttribute('name')?.endsWith('schedule')) return;
     try {
