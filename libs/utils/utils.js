@@ -1,9 +1,6 @@
 /* eslint-disable no-console */
 
-const MILO_TEMPLATES = [
-  '404',
-  'featured-story',
-];
+const MILO_TEMPLATES = ['404', 'featured-story'];
 const MILO_BLOCKS = [
   'accordion',
   'action-item',
@@ -41,6 +38,7 @@ const MILO_BLOCKS = [
   'iframe',
   'instagram',
   'locui',
+  'locuiv',
   'marketo',
   'marquee',
   'marquee-anchors',
@@ -102,11 +100,7 @@ const AUTO_BLOCKS = [
   { video: '.mp4' },
   { merch: '/tools/ost?' },
 ];
-const DO_NOT_INLINE = [
-  'accordion',
-  'columns',
-  'z-pattern',
-];
+const DO_NOT_INLINE = ['accordion', 'columns', 'z-pattern'];
 
 const ENVS = {
   stage: {
@@ -143,12 +137,15 @@ function getEnv(conf) {
   const query = PAGE_URL.searchParams.get('env');
 
   if (query) return { ...ENVS[query], consumer: conf[query] };
-  if (host.includes('localhost')) return { ...ENVS.local, consumer: conf.local };
+  if (host.includes('localhost'))
+    return { ...ENVS.local, consumer: conf.local };
   /* c8 ignore start */
-  if (host.includes('hlx.page')
-    || host.includes('hlx.live')
-    || host.includes('stage.adobe')
-    || host.includes('corp.adobe')) {
+  if (
+    host.includes('hlx.page') ||
+    host.includes('hlx.live') ||
+    host.includes('stage.adobe') ||
+    host.includes('corp.adobe')
+  ) {
     return { ...ENVS.stage, consumer: conf.stage };
   }
   return { ...ENVS.prod, consumer: conf.prod };
@@ -165,9 +162,10 @@ export function getLocale(locales, pathname = window.location.pathname) {
   if (localeString === LANGSTORE) {
     locale.prefix = `/${localeString}/${split[2]}`;
     if (
-      Object.values(locales)
-        .find((loc) => loc.ietf?.startsWith(split[2]))?.dir === 'rtl'
-    ) locale.dir = 'rtl';
+      Object.values(locales).find((loc) => loc.ietf?.startsWith(split[2]))
+        ?.dir === 'rtl'
+    )
+      locale.dir = 'rtl';
     return locale;
   }
   const isUS = locale.ietf === 'en-US';
@@ -212,25 +210,34 @@ export const [setConfig, updateConfig, getConfig] = (() => {
       config = { env: getEnv(conf), ...conf };
       config.codeRoot = conf.codeRoot ? `${origin}${conf.codeRoot}` : origin;
       config.base = config.miloLibs || config.codeRoot;
-      config.locale = pathname ? getLocale(conf.locales, pathname) : getLocale(conf.locales);
-      config.autoBlocks = conf.autoBlocks ? [...AUTO_BLOCKS, ...conf.autoBlocks] : AUTO_BLOCKS;
+      config.locale = pathname
+        ? getLocale(conf.locales, pathname)
+        : getLocale(conf.locales);
+      config.autoBlocks = conf.autoBlocks
+        ? [...AUTO_BLOCKS, ...conf.autoBlocks]
+        : AUTO_BLOCKS;
       config.doNotInline = conf.doNotInline
         ? [...DO_NOT_INLINE, ...conf.doNotInline]
         : DO_NOT_INLINE;
       const lang = getMetadata('content-language') || config.locale.ietf;
       document.documentElement.setAttribute('lang', lang);
       try {
-        const dir = getMetadata('content-direction')
-          || config.locale.dir
-          || (config.locale.ietf && (new Intl.Locale(config.locale.ietf)?.textInfo?.direction))
-          || 'ltr';
+        const dir =
+          getMetadata('content-direction') ||
+          config.locale.dir ||
+          (config.locale.ietf &&
+            new Intl.Locale(config.locale.ietf)?.textInfo?.direction) ||
+          'ltr';
         document.documentElement.setAttribute('dir', dir);
       } catch (e) {
         console.log('Invalid or missing locale:', e);
       }
-      config.locale.contentRoot = `${origin}${config.locale.prefix}${config.contentRoot ?? ''}`;
-      config.useDotHtml = !PAGE_URL.origin.includes('.hlx.')
-        && (conf.useDotHtml ?? PAGE_URL.pathname.endsWith('.html'));
+      config.locale.contentRoot = `${origin}${config.locale.prefix}${
+        config.contentRoot ?? ''
+      }`;
+      config.useDotHtml =
+        !PAGE_URL.origin.includes('.hlx.') &&
+        (conf.useDotHtml ?? PAGE_URL.pathname.endsWith('.html'));
       config.entitlements = handleEntitlements;
       config.consumerEntitlements = conf.entitlements || [];
       setupMiloObj(config);
@@ -248,9 +255,11 @@ export function isInTextNode(node) {
 export function createTag(tag, attributes, html, options = {}) {
   const el = document.createElement(tag);
   if (html) {
-    if (html instanceof HTMLElement
-      || html instanceof SVGElement
-      || html instanceof DocumentFragment) {
+    if (
+      html instanceof HTMLElement ||
+      html instanceof SVGElement ||
+      html instanceof DocumentFragment
+    ) {
       el.append(html);
     } else if (Array.isArray(html)) {
       el.append(...html);
@@ -275,7 +284,7 @@ function getExtension(path) {
 export function localizeLink(
   href,
   originHostName = window.location.hostname,
-  overrideDomain = false,
+  overrideDomain = false
 ) {
   try {
     const url = new URL(href);
@@ -289,11 +298,18 @@ export function localizeLink(
     if (!allowedExts.includes(extension)) return processedHref;
     const { locale, locales, prodDomains } = getConfig();
     if (!locale || !locales) return processedHref;
-    const isLocalizable = relative || (prodDomains && prodDomains.includes(url.hostname))
-      || overrideDomain;
+    const isLocalizable =
+      relative ||
+      (prodDomains && prodDomains.includes(url.hostname)) ||
+      overrideDomain;
     if (!isLocalizable) return processedHref;
-    const isLocalizedLink = path.startsWith(`/${LANGSTORE}`) || Object.keys(locales)
-      .some((loc) => loc !== '' && (path.startsWith(`/${loc}/`) || path.endsWith(`/${loc}`)));
+    const isLocalizedLink =
+      path.startsWith(`/${LANGSTORE}`) ||
+      Object.keys(locales).some(
+        (loc) =>
+          loc !== '' &&
+          (path.startsWith(`/${loc}/`) || path.endsWith(`/${loc}`))
+      );
     if (isLocalizedLink) return processedHref;
     const urlPath = `${locale.prefix}${path}${url.search}${hash}`;
     return relative ? urlPath : `${url.origin}${urlPath}`;
@@ -302,7 +318,10 @@ export function localizeLink(
   }
 }
 
-export function loadLink(href, { as, callback, crossorigin, rel, fetchpriority } = {}) {
+export function loadLink(
+  href,
+  { as, callback, crossorigin, rel, fetchpriority } = {}
+) {
   let link = document.head.querySelector(`link[href="${href}"]`);
   if (!link) {
     link = document.createElement('link');
@@ -332,7 +351,8 @@ export function appendHtmlToCanonicalUrl() {
   const canonEl = document.head.querySelector('link[rel="canonical"]');
   if (!canonEl) return;
   const canonUrl = new URL(canonEl.href);
-  if (canonUrl.pathname.endsWith('/') || canonUrl.pathname.endsWith('.html')) return;
+  if (canonUrl.pathname.endsWith('/') || canonUrl.pathname.endsWith('.html'))
+    return;
   const pagePath = PAGE_URL.pathname.replace('.html', '');
   if (pagePath !== canonUrl.pathname) return;
   canonEl.setAttribute('href', `${canonEl.href}.html`);
@@ -349,67 +369,83 @@ export function appendHtmlToLink(link) {
   const HAS_EXTENSION = /\..*$/;
   let url = { pathname: href };
 
-  try { url = new URL(href, PAGE_URL); } catch (e) { /* do nothing */ }
+  try {
+    url = new URL(href, PAGE_URL);
+  } catch (e) {
+    /* do nothing */
+  }
 
-  if (!(href.startsWith('/') || href.startsWith(PAGE_URL.origin))
-    || url.pathname?.endsWith('/')
-    || href === PAGE_URL.origin
-    || HAS_EXTENSION.test(href.split('/').pop())
-    || htmlExclude?.some((excludeRe) => excludeRe.test(href))) {
+  if (
+    !(href.startsWith('/') || href.startsWith(PAGE_URL.origin)) ||
+    url.pathname?.endsWith('/') ||
+    href === PAGE_URL.origin ||
+    HAS_EXTENSION.test(href.split('/').pop()) ||
+    htmlExclude?.some((excludeRe) => excludeRe.test(href))
+  ) {
     return;
   }
 
   const relativeAutoBlocks = autoBlocks
     .map((b) => Object.values(b)[0])
     .filter((b) => b.startsWith('/'));
-  const isAutoblockLink = relativeAutoBlocks.some((block) => href.includes(block));
+  const isAutoblockLink = relativeAutoBlocks.some((block) =>
+    href.includes(block)
+  );
   if (isAutoblockLink) return;
 
   try {
-    const linkUrl = new URL(href.startsWith('http') ? href : `${PAGE_URL.origin}${href}`);
+    const linkUrl = new URL(
+      href.startsWith('http') ? href : `${PAGE_URL.origin}${href}`
+    );
     if (linkUrl.pathname && !linkUrl.pathname.endsWith('.html')) {
       linkUrl.pathname = `${linkUrl.pathname}.html`;
-      link.setAttribute('href', href.startsWith('/')
-        ? `${linkUrl.pathname}${linkUrl.search}${linkUrl.hash}`
-        : linkUrl.href);
+      link.setAttribute(
+        'href',
+        href.startsWith('/')
+          ? `${linkUrl.pathname}${linkUrl.search}${linkUrl.hash}`
+          : linkUrl.href
+      );
     }
   } catch (e) {
-    window.lana?.log(`Error while attempting to append '.html' to ${link}: ${e}`);
+    window.lana?.log(
+      `Error while attempting to append '.html' to ${link}: ${e}`
+    );
   }
 }
 
-export const loadScript = (url, type) => new Promise((resolve, reject) => {
-  let script = document.querySelector(`head > script[src="${url}"]`);
-  if (!script) {
-    const { head } = document;
-    script = document.createElement('script');
-    script.setAttribute('src', url);
-    if (type) {
-      script.setAttribute('type', type);
+export const loadScript = (url, type) =>
+  new Promise((resolve, reject) => {
+    let script = document.querySelector(`head > script[src="${url}"]`);
+    if (!script) {
+      const { head } = document;
+      script = document.createElement('script');
+      script.setAttribute('src', url);
+      if (type) {
+        script.setAttribute('type', type);
+      }
+      head.append(script);
     }
-    head.append(script);
-  }
 
-  if (script.dataset.loaded) {
-    resolve(script);
-    return;
-  }
-
-  const onScript = (event) => {
-    script.removeEventListener('load', onScript);
-    script.removeEventListener('error', onScript);
-
-    if (event.type === 'error') {
-      reject(new Error(`error loading script: ${script.src}`));
-    } else if (event.type === 'load') {
-      script.dataset.loaded = true;
+    if (script.dataset.loaded) {
       resolve(script);
+      return;
     }
-  };
 
-  script.addEventListener('load', onScript);
-  script.addEventListener('error', onScript);
-});
+    const onScript = (event) => {
+      script.removeEventListener('load', onScript);
+      script.removeEventListener('error', onScript);
+
+      if (event.type === 'error') {
+        reject(new Error(`error loading script: ${script.src}`));
+      } else if (event.type === 'load') {
+        script.dataset.loaded = true;
+        resolve(script);
+      }
+    };
+
+    script.addEventListener('load', onScript);
+    script.addEventListener('error', onScript);
+  });
 
 export async function loadTemplate() {
   const template = getMetadata('template');
@@ -526,7 +562,9 @@ export function decorateImageLinks(el) {
         const aTag = createTag('a', { href, class: 'image-link' });
         picParent.insertBefore(aTag, pic);
         if (icon) {
-          import('./image-video-link.js').then((mod) => mod.default(picParent, aTag, icon));
+          import('./image-video-link.js').then((mod) =>
+            mod.default(picParent, aTag, icon)
+          );
         } else {
           aTag.append(pic);
         }
@@ -544,13 +582,16 @@ export function decorateAutoBlock(a) {
   try {
     url = new URL(a.href);
   } catch (e) {
-    window.lana?.log(`Cannot make URL from decorateAutoBlock - ${a?.href}: ${e.toString()}`);
+    window.lana?.log(
+      `Cannot make URL from decorateAutoBlock - ${a?.href}: ${e.toString()}`
+    );
     return false;
   }
 
-  const href = hostname === url.hostname
-    ? `${url.pathname}${url.search}${url.hash}`
-    : a.href;
+  const href =
+    hostname === url.hostname
+      ? `${url.pathname}${url.search}${url.hash}`
+      : a.href;
 
   return config.autoBlocks.find((candidate) => {
     const key = Object.keys(candidate)[0];
@@ -672,13 +713,14 @@ function decorateHeader() {
     return;
   }
   header.className = headerMeta || 'gnav';
-  const metadataConfig = getMetadata('breadcrumbs')?.toLowerCase()
-  || getConfig().breadcrumbs;
+  const metadataConfig =
+    getMetadata('breadcrumbs')?.toLowerCase() || getConfig().breadcrumbs;
   if (metadataConfig === 'off') return;
   const baseBreadcrumbs = getMetadata('breadcrumbs-base')?.length;
   const breadcrumbs = document.querySelector('.breadcrumbs');
   const autoBreadcrumbs = getMetadata('breadcrumbs-from-url') === 'on';
-  if (baseBreadcrumbs || breadcrumbs || autoBreadcrumbs) header.classList.add('has-breadcrumbs');
+  if (baseBreadcrumbs || breadcrumbs || autoBreadcrumbs)
+    header.classList.add('has-breadcrumbs');
   if (breadcrumbs) header.append(breadcrumbs);
   const promo = getMetadata('gnav-promo-source');
   if (promo?.length) header.classList.add('has-promo');
@@ -689,7 +731,9 @@ async function decorateIcons(area, config) {
   if (icons.length === 0) return;
   const { miloLibs, codeRoot } = config;
   const base = miloLibs || codeRoot;
-  await new Promise((resolve) => { loadStyle(`${base}/features/icons/icons.css`, resolve); });
+  await new Promise((resolve) => {
+    loadStyle(`${base}/features/icons/icons.css`, resolve);
+  });
   const { default: loadIcons } = await import('../features/icons/icons.js');
   await loadIcons(icons, config);
 }
@@ -739,23 +783,29 @@ function decorateSection(section, idx) {
   const blocks = section.querySelectorAll(':scope > div[class]:not(.content)');
 
   const { doNotInline } = getConfig();
-  const blockLinks = [...blocks].reduce((blkLinks, block) => {
-    const blockName = block.classList[0];
-    links.filter((link) => block.contains(link))
-      .forEach((link) => {
-        if (link.classList.contains('fragment')
-          && MILO_BLOCKS.includes(blockName) // do not inline consumer blocks (for now)
-          && !doNotInline.includes(blockName)) {
-          if (!link.href.includes('#_inline')) {
-            link.href = `${link.href}#_inline`;
+  const blockLinks = [...blocks].reduce(
+    (blkLinks, block) => {
+      const blockName = block.classList[0];
+      links
+        .filter((link) => block.contains(link))
+        .forEach((link) => {
+          if (
+            link.classList.contains('fragment') &&
+            MILO_BLOCKS.includes(blockName) && // do not inline consumer blocks (for now)
+            !doNotInline.includes(blockName)
+          ) {
+            if (!link.href.includes('#_inline')) {
+              link.href = `${link.href}#_inline`;
+            }
+            blkLinks.inlineFrags.push(link);
+          } else if (link.classList.contains('link-block')) {
+            blkLinks.autoBlocks.push(link);
           }
-          blkLinks.inlineFrags.push(link);
-        } else if (link.classList.contains('link-block')) {
-          blkLinks.autoBlocks.push(link);
-        }
-      });
-    return blkLinks;
-  }, { inlineFrags: [], autoBlocks: [] });
+        });
+      return blkLinks;
+    },
+    { inlineFrags: [], autoBlocks: [] }
+  );
 
   const embeddedLinks = [...blockLinks.inlineFrags, ...blockLinks.autoBlocks];
   if (embeddedLinks.length) {
@@ -782,50 +832,68 @@ export async function decorateFooterPromo(doc = document) {
   const footerPromoType = getMetadata('footer-promo-type', doc);
   if (!footerPromoTag && footerPromoType !== 'taxonomy') return;
 
-  const { default: initFooterPromo } = await import('../features/footer-promo.js');
+  const { default: initFooterPromo } = await import(
+    '../features/footer-promo.js'
+  );
   await initFooterPromo(footerPromoTag, footerPromoType, doc);
 }
 
 let imsLoaded;
 export async function loadIms() {
-  imsLoaded = imsLoaded || new Promise((resolve, reject) => {
-    const { locale, imsClientId, imsScope, env, base } = getConfig();
-    if (!imsClientId) {
-      reject(new Error('Missing IMS Client ID'));
-      return;
-    }
-    const [unavMeta, ahomeMeta] = [getMetadata('universal-nav')?.trim(), getMetadata('adobe-home-redirect')];
-    const defaultScope = `AdobeID,openid,gnav${unavMeta && unavMeta !== 'off' ? ',pps.read,firefly_api,additional_info.roles,read_organizations' : ''}`;
-    const timeout = setTimeout(() => reject(new Error('IMS timeout')), 5000);
-    window.adobeid = {
-      client_id: imsClientId,
-      scope: imsScope || defaultScope,
-      locale: locale?.ietf?.replace('-', '_') || 'en_US',
-      redirect_uri: ahomeMeta === 'on'
-        ? `https://www${env.name !== 'prod' ? '.stage' : ''}.adobe.com${locale.prefix}` : undefined,
-      autoValidateToken: true,
-      environment: env.ims,
-      useLocalStorage: false,
-      onReady: () => {
-        resolve();
-        clearTimeout(timeout);
-      },
-      onError: reject,
-    };
-    const path = PAGE_URL.searchParams.get('useAlternateImsDomain')
-      ? 'https://auth.services.adobe.com/imslib/imslib.min.js'
-      : `${base}/deps/imslib.min.js`;
-    loadScript(path);
-  }).then(() => {
-    if (!window.adobeIMS?.isSignedInUser()) {
-      getConfig().entitlements([]);
-    }
-  });
+  imsLoaded =
+    imsLoaded ||
+    new Promise((resolve, reject) => {
+      const { locale, imsClientId, imsScope, env, base } = getConfig();
+      if (!imsClientId) {
+        reject(new Error('Missing IMS Client ID'));
+        return;
+      }
+      const [unavMeta, ahomeMeta] = [
+        getMetadata('universal-nav')?.trim(),
+        getMetadata('adobe-home-redirect'),
+      ];
+      const defaultScope = `AdobeID,openid,gnav${
+        unavMeta && unavMeta !== 'off'
+          ? ',pps.read,firefly_api,additional_info.roles,read_organizations'
+          : ''
+      }`;
+      const timeout = setTimeout(() => reject(new Error('IMS timeout')), 5000);
+      window.adobeid = {
+        client_id: imsClientId,
+        scope: imsScope || defaultScope,
+        locale: locale?.ietf?.replace('-', '_') || 'en_US',
+        redirect_uri:
+          ahomeMeta === 'on'
+            ? `https://www${env.name !== 'prod' ? '.stage' : ''}.adobe.com${
+                locale.prefix
+              }`
+            : undefined,
+        autoValidateToken: true,
+        environment: env.ims,
+        useLocalStorage: false,
+        onReady: () => {
+          resolve();
+          clearTimeout(timeout);
+        },
+        onError: reject,
+      };
+      const path = PAGE_URL.searchParams.get('useAlternateImsDomain')
+        ? 'https://auth.services.adobe.com/imslib/imslib.min.js'
+        : `${base}/deps/imslib.min.js`;
+      loadScript(path);
+    }).then(() => {
+      if (!window.adobeIMS?.isSignedInUser()) {
+        getConfig().entitlements([]);
+      }
+    });
 
   return imsLoaded;
 }
 
-export async function loadMartech({ persEnabled = false, persManifests = [] } = {}) {
+export async function loadMartech({
+  persEnabled = false,
+  persManifests = [],
+} = {}) {
   // eslint-disable-next-line no-underscore-dangle
   if (window.marketingtech?.adobe?.launch && window._satellite) {
     return true;
@@ -853,28 +921,34 @@ async function checkForPageMods() {
   const targetMd = getMetadata('target');
   let persManifests = [];
   const persEnabled = persMd && persMd !== 'off' && !offFlag('personalization');
-  const targetEnabled = targetMd && targetMd !== 'off' && !offFlag('target') && !offFlag('martech');
+  const targetEnabled =
+    targetMd && targetMd !== 'off' && !offFlag('target') && !offFlag('martech');
   const promoEnabled = promoMd && promoMd !== 'off' && !offFlag('promo');
   const mepEnabled = persEnabled || targetEnabled || promoEnabled;
 
   if (mepEnabled) {
     const { base } = getConfig();
-    loadLink(
-      `${base}/features/personalization/personalization.js`,
-      { as: 'script', rel: 'modulepreload' },
-    );
+    loadLink(`${base}/features/personalization/personalization.js`, {
+      as: 'script',
+      rel: 'modulepreload',
+    });
   }
 
   if (persEnabled) {
-    persManifests = persMd.toLowerCase()
+    persManifests = persMd
+      .toLowerCase()
       .split(/,|(\s+)|(\\n)/g)
       .filter((path) => path?.trim())
       .map((manifestPath) => ({ manifestPath }));
   }
 
   if (promoEnabled) {
-    const { default: getPromoManifests } = await import('../features/personalization/promo-utils.js');
-    persManifests = persManifests.concat(getPromoManifests(promoMd, PAGE_URL.searchParams));
+    const { default: getPromoManifests } = await import(
+      '../features/personalization/promo-utils.js'
+    );
+    persManifests = persManifests.concat(
+      getPromoManifests(promoMd, PAGE_URL.searchParams)
+    );
   }
 
   const { env } = getConfig();
@@ -882,7 +956,9 @@ async function checkForPageMods() {
   const mep = PAGE_URL.searchParams.get('mep');
   if (mep !== null || (env?.name !== 'prod' && mepEnabled)) {
     previewOn = !offFlag('mepButton');
-    const { default: addPreviewToConfig } = await import('../features/personalization/add-preview-to-config.js');
+    const { default: addPreviewToConfig } = await import(
+      '../features/personalization/add-preview-to-config.js'
+    );
     persManifests = await addPreviewToConfig({
       pageUrl: PAGE_URL,
       mepEnabled,
@@ -897,24 +973,34 @@ async function checkForPageMods() {
       .then(() => {
         if (window.adobeIMS.isSignedInUser()) loadMartech();
       })
-      .catch((e) => { console.log('Unable to load IMS:', e); });
+      .catch((e) => {
+        console.log('Unable to load IMS:', e);
+      });
 
-    const { preloadManifests, applyPers } = await import('../features/personalization/personalization.js');
-    const manifests = preloadManifests({ persManifests }, { getConfig, loadLink });
+    const { preloadManifests, applyPers } = await import(
+      '../features/personalization/personalization.js'
+    );
+    const manifests = preloadManifests(
+      { persManifests },
+      { getConfig, loadLink }
+    );
 
     await applyPers(manifests);
   }
 
   if (previewOn) {
-    import('../features/personalization/preview.js')
-      .then(({ default: decoratePreviewMode }) => decoratePreviewMode());
+    import('../features/personalization/preview.js').then(
+      ({ default: decoratePreviewMode }) => decoratePreviewMode()
+    );
   }
 }
 
 async function loadPostLCP(config) {
   const georouting = getMetadata('georouting') || config.geoRouting;
   if (georouting === 'on') {
-    const { default: loadGeoRouting } = await import('../features/georoutingv2/georoutingv2.js');
+    const { default: loadGeoRouting } = await import(
+      '../features/georoutingv2/georoutingv2.js'
+    );
     await loadGeoRouting(config, createTag, getMetadata, loadBlock, loadStyle);
   }
   loadMartech();
@@ -936,11 +1022,15 @@ export function scrollToHashedElement(hash) {
   try {
     targetElement = document.querySelector(`#${elementId}:not(.dialog-modal)`);
   } catch (e) {
-    window.lana?.log(`Could not query element because of invalid hash - ${elementId}: ${e.toString()}`);
+    window.lana?.log(
+      `Could not query element because of invalid hash - ${elementId}: ${e.toString()}`
+    );
   }
   if (!targetElement) return;
-  const bufferHeight = document.querySelector('.global-navigation')?.offsetHeight || 0;
-  const topOffset = targetElement.getBoundingClientRect().top + window.pageYOffset;
+  const bufferHeight =
+    document.querySelector('.global-navigation')?.offsetHeight || 0;
+  const topOffset =
+    targetElement.getBoundingClientRect().top + window.pageYOffset;
   window.scrollTo({
     top: topOffset - bufferHeight,
     behavior: 'smooth',
@@ -958,15 +1048,19 @@ export async function loadDeferred(area, blocks, config) {
   config.resolveDeferred?.(true);
 
   if (config.links === 'on') {
-    const path = `${config.contentRoot || ''}${getMetadata('links-path') || '/seo/links.json'}`;
+    const path = `${config.contentRoot || ''}${
+      getMetadata('links-path') || '/seo/links.json'
+    }`;
     import('../features/links.js').then((mod) => mod.default(path, area));
   }
 
   if (config.locale?.ietf === 'ja-JP') {
     // Japanese word-wrap
-    import('../features/japanese-word-wrap.js').then(({ default: controlJapaneseLineBreaks }) => {
-      controlJapaneseLineBreaks(config, area);
-    });
+    import('../features/japanese-word-wrap.js').then(
+      ({ default: controlJapaneseLineBreaks }) => {
+        controlJapaneseLineBreaks(config, area);
+      }
+    );
   }
 
   import('./samplerum.js').then(({ sampleRUM }) => {
@@ -999,10 +1093,14 @@ function decorateMeta() {
     try {
       const url = new URL(meta.content);
       const localizedLink = localizeLink(`${origin}${url.pathname}`);
-      const localizedURL = localizedLink.includes(origin) ? localizedLink : `${origin}${localizedLink}`;
+      const localizedURL = localizedLink.includes(origin)
+        ? localizedLink
+        : `${origin}${localizedLink}`;
       meta.setAttribute('content', `${localizedURL}${url.search}${url.hash}`);
     } catch (e) {
-      window.lana?.log(`Cannot make URL from metadata - ${meta.content}: ${e.toString()}`);
+      window.lana?.log(
+        `Cannot make URL from metadata - ${meta.content}: ${e.toString()}`
+      );
     }
   });
 
@@ -1030,23 +1128,37 @@ async function documentPostSectionLoading(config) {
 
   const appendage = getMetadata('title-append');
   if (appendage) {
-    import('../features/title-append/title-append.js').then((module) => module.default(appendage));
+    import('../features/title-append/title-append.js').then((module) =>
+      module.default(appendage)
+    );
   }
-  if (getMetadata('seotech-structured-data') === 'on' || getMetadata('seotech-video-url')) {
-    import('../features/seotech/seotech.js').then((module) => module.default(
-      { locationUrl: window.location.href, getMetadata, createTag, getConfig },
-    ));
+  if (
+    getMetadata('seotech-structured-data') === 'on' ||
+    getMetadata('seotech-video-url')
+  ) {
+    import('../features/seotech/seotech.js').then((module) =>
+      module.default({
+        locationUrl: window.location.href,
+        getMetadata,
+        createTag,
+        getConfig,
+      })
+    );
   }
   const richResults = getMetadata('richresults');
   if (richResults) {
-    const { default: addRichResults } = await import('../features/richresults.js');
+    const { default: addRichResults } = await import(
+      '../features/richresults.js'
+    );
     addRichResults(richResults, { createTag, getMetadata });
   }
   loadFooter();
   const { default: loadFavIcon } = await import('./favicon.js');
   loadFavIcon(createTag, getConfig(), getMetadata);
   if (config.experiment?.selectedVariant?.scripts?.length) {
-    config.experiment.selectedVariant.scripts.forEach((script) => loadScript(script));
+    config.experiment.selectedVariant.scripts.forEach((script) =>
+      loadScript(script)
+    );
   }
   initSidekick();
 
@@ -1054,16 +1166,24 @@ async function documentPostSectionLoading(config) {
   delayed([getConfig, getMetadata, loadScript, loadStyle, loadIms]);
 
   import('../martech/attributes.js').then((analytics) => {
-    document.querySelectorAll('main > div').forEach((section, idx) => analytics.decorateSectionAnalytics(section, idx, config));
+    document
+      .querySelectorAll('main > div')
+      .forEach((section, idx) =>
+        analytics.decorateSectionAnalytics(section, idx, config)
+      );
   });
 
-  document.body.appendChild(createTag('div', { id: 'page-load-ok-milo', style: 'display: none;' }));
+  document.body.appendChild(
+    createTag('div', { id: 'page-load-ok-milo', style: 'display: none;' })
+  );
 }
 
 async function processSection(section, config, isDoc) {
   const inlineFrags = [...section.el.querySelectorAll('a[href*="#_inline"]')];
   if (inlineFrags.length) {
-    const { default: loadInlineFrags } = await import('../blocks/fragment/fragment.js');
+    const { default: loadInlineFrags } = await import(
+      '../blocks/fragment/fragment.js'
+    );
     const fragPromises = inlineFrags.map((link) => loadInlineFrags(link));
     await Promise.all(fragPromises);
     await decoratePlaceholders(section.el, config);
@@ -1137,7 +1257,8 @@ export function loadDelayed() {
   // TODO: remove after all consumers have stopped calling this method
 }
 
-export const utf8ToB64 = (str) => window.btoa(unescape(encodeURIComponent(str)));
+export const utf8ToB64 = (str) =>
+  window.btoa(unescape(encodeURIComponent(str)));
 export const b64ToUtf8 = (str) => decodeURIComponent(escape(window.atob(str)));
 
 export function parseEncodedConfig(encodedConfig) {
@@ -1149,7 +1270,12 @@ export function parseEncodedConfig(encodedConfig) {
   return null;
 }
 
-export function createIntersectionObserver({ el, callback, once = true, options = {} }) {
+export function createIntersectionObserver({
+  el,
+  callback,
+  once = true,
+  options = {},
+}) {
   const io = new IntersectionObserver((entries, observer) => {
     entries.forEach(async (entry) => {
       if (entry.isIntersecting) {
