@@ -1,5 +1,6 @@
 import { html } from '../../../deps/htm-preact.js';
+import Create from './create.js';
 
-export default function Create() {
-  return html`<div>Locui Create Project</div>`;
+export default function LocCreate() {
+  return html`<${Create} />`
 }
