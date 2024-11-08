@@ -38,7 +38,7 @@ const MILO_BLOCKS = [
   'iframe',
   'instagram',
   'locui',
-  'locuiv',
+  'locui-create',
   'marketo',
   'marquee',
   'marquee-anchors',
