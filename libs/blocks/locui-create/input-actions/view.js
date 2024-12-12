@@ -97,6 +97,7 @@ export default function InputActionsView() {
       const error = await updateDraftProject(true);
       if (error) {
         setApiError(error);
+        projectCreatedModal('error');
       } else { projectCreatedModal(); }
     }
   };
