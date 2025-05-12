@@ -65,6 +65,7 @@ function closeMediaPanel(displayArea, el, dd, clickedId) {
 }
 
 function openMediaPanel(displayArea, el, dd, clickedId) {
+  console.log('Testing the file for Accordion');
   const accordionId = el.getAttribute('aria-controls').split('-')[1];
   [...mediaCollection[accordionId]].forEach((mediaCollectionItem, idx) => {
     const video = mediaCollectionItem.querySelector('video');
