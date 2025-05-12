@@ -19,7 +19,7 @@ import {
 import locales from '../utils/locales.js';
 
 // Production Domain
-const prodDomains = ['milo.adobe.com'];
+const prodDomains = ['milo.adobe.com', 'business.adobe.com', 'www.adobe.com', 'news.adobe.com'];
 
 const stageDomainsMap = {
   'www.stage.adobe.com': {
@@ -35,7 +35,7 @@ const stageDomainsMap = {
     'business.adobe.com': 'main--bacom--adobecom.hlx.page',
   },
   '.business-graybox.adobe.com': { 'business.adobe.com': 'origin' },
-  '^https://.*--milo--.*.hlx.page': {
+  '^https://.*--milo--.*.(hlx|aem).page': {
     '^https://www.adobe.com/acrobat': 'https://main--dc--adobecom.hlx.page',
     '^https://business.adobe.com(?!/blog)': 'https://business.stage.adobe.com',
     '^https://business.adobe.com/blog': 'https://main--bacom-blog--adobecom.hlx.page',
@@ -50,6 +50,23 @@ const config = {
   imsClientId: 'milo',
   codeRoot: '/libs',
   locales,
+  languages: {
+    en: {
+      tk: 'hah7vzn.css',
+      regions: [
+        { region: 'us' },
+        { region: 'gb' },
+        { region: 'apac', ietf: 'en' },
+      ],
+    },
+    de: {
+      tk: 'hah7vzn.css',
+      regions: [
+        { region: 'ch' },
+        { region: 'de' },
+      ],
+    },
+  },
   prodDomains,
   stageDomainsMap,
   jarvis: {

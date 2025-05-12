@@ -12,7 +12,10 @@
     tags: '',
     implicitSampleRate: 1,
     useProd: true,
+    isProdDomain: false,
   };
+
+  const VALID_SEVERITIES = new Set(['d', 'debug', 'i', 'info', 'w', 'warn', 'e', 'error', 'c', 'critical']);
 
   const w = window;
 
@@ -51,6 +54,14 @@
     }, {});
   }
 
+  function hasDebugParam() {
+    return w.location.search.toLowerCase().indexOf('lanadebug') !== -1;
+  }
+
+  function isLocalhost() {
+    return w.location.host.toLowerCase().indexOf('localhost') !== -1;
+  }
+
   function log(msg, options) {
     msg = msg && msg.stack ? msg.stack : (msg || '');
     if (msg.length > MSG_LIMIT) {
@@ -63,12 +74,26 @@
       return;
     }
 
+    let severity;
+    if (options && options.severity !== undefined) {
+      if (VALID_SEVERITIES.has(options.severity)) {
+        severity = options.severity;
+      } else {
+        const isDebugMode = hasDebugParam() || w.lana.debug;
+        const defaultSeverity = isDebugMode ? 'd' : 'i';
+        console.warn(`LANA: Invalid severity '${options.severity}'. Defaulting to '${defaultSeverity}'.`);
+        severity = defaultSeverity;
+      }
+    } else if (w.lana.debug) {
+      severity = 'd';
+    }
+
     const sampleRateParam = parseInt(new URL(window.location).searchParams.get('lana-sample'), 10);
     const sampleRate = sampleRateParam || (o.errorType === 'i' ? o.implicitSampleRate : o.sampleRate);
 
     if (!w.lana.debug && !w.lana.localhost && sampleRate <= Math.random() * 100) return;
 
-    const isProdDomain = isProd();
+    const isProdDomain = isProd() || o.isProdDomain;
 
     const endpoint = (!isProdDomain || !o.useProd) ? o.endpointStage : o.endpoint;
     const queryParams = [
@@ -77,6 +102,10 @@
       `s=${sampleRate}`,
       `t=${encodeURI(o.errorType)}`,
     ];
+
+    if (severity) {
+      queryParams.push(`r=${encodeURI(severity)}`);
+    }
 
     if (o.tags) {
       queryParams.push(`tags=${encodeURI(o.tags)}`);
@@ -101,14 +130,6 @@
 
   function sendUnhandledError(e) {
     log(e.reason || e.error || e.message, { errorType: 'i' });
-  }
-
-  function hasDebugParam() {
-    return w.location.search.toLowerCase().indexOf('lanadebug') !== -1;
-  }
-
-  function isLocalhost() {
-    return w.location.host.toLowerCase().indexOf('localhost') !== -1;
   }
 
   w.lana = {

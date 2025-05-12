@@ -7,10 +7,13 @@ const NOT_FOUND = {
   preview: { lastModified: DEF_NOT_FOUND },
   live: { lastModified: DEF_NOT_FOUND },
 };
+const DA_DOMAIN = 'da.live';
+const nonEDSContent = 'Non AEM EDS Content';
 
 const content = signal({});
 
 function getAdminUrl(url, type) {
+  if (!(/adobecom\.(hlx|aem)./.test(url.hostname))) return false;
   const project = url.hostname === 'localhost' ? 'main--milo--adobecom' : url.hostname.split('.')[0];
   const [branch, repo, owner] = project.split('--');
   const base = `https://admin.hlx.page/${type}/${owner}/${repo}/${branch}${url.pathname}`;
@@ -19,13 +22,26 @@ function getAdminUrl(url, type) {
 
 async function getStatus(url) {
   const adminUrl = getAdminUrl(url, 'status');
+  if (!adminUrl) {
+    return {
+      url,
+      edit: null,
+      preview: nonEDSContent,
+      live: nonEDSContent,
+      publish: nonEDSContent,
+      externalUrl: url,
+    };
+  }
   const resp = await fetch(adminUrl);
   if (!resp.ok) return {};
   const json = await resp.json();
   const preview = json.preview.lastModified || DEF_NEVER;
   const live = json.live.lastModified || DEF_NEVER;
   const publish = await userCanPublishPage(json, false);
-  const edit = json.edit.url;
+  const { sourceLocation } = json.preview;
+  const edit = json.edit?.url
+    || (sourceLocation?.includes(DA_DOMAIN) && sourceLocation?.replace('markup:https://content.da.live', 'https://da.live/edit#'))
+    || '';
   return { url, edit, preview, live, publish };
 }
 
@@ -78,7 +94,10 @@ async function setContent() {
 
   getStatuses();
   const sk = document.querySelector('aem-sidekick, helix-sidekick');
-  sk?.addEventListener('statusfetched', async () => {
+  sk?.addEventListener('statusfetched', async () => { // sidekick v6
+    getStatuses();
+  });
+  sk?.addEventListener('status-fetched', async () => { // sidekick v7
     getStatuses();
   });
 }
@@ -164,14 +183,16 @@ function usePublishProps(item) {
 function Item({ name, item, idx }) {
   const { publishText, disablePublish } = usePublishProps(item);
   const isChecked = item.checked ? ' is-checked' : '';
-  const isFetching = item.edit ? '' : ' is-fetching';
+  const isFetching = item.edit || item.preview === nonEDSContent ? '' : ' is-fetching';
+  const editIcon = item.edit && item.edit.includes(DA_DOMAIN) ? 'da-icon' : 'sharepoint-icon';
+  const prettyUrl = item.externalUrl ? item.externalUrl.href : prettyPath(item.url);
   if (!item.url) return undefined;
 
   return html`
     <div class="preflight-group-row preflight-group-detail${isChecked}${checkPublishing(item, isFetching)}"
       onClick=${(e) => handleChange(e.target, name, idx)}>
-      <p><a href=${item.url.pathname} target=_blank>${prettyPath(item.url)}</a></p>
-      <p>${item.edit && html`<a href=${item.edit} class=preflight-edit target=_blank>EDIT</a>`}</p>
+      <p><a href=${item.externalUrl || item.url.pathname} target=_blank>${prettyUrl}</a></p>
+      <p>${item.edit && html`<a href=${item.edit} class="preflight-edit ${editIcon}" target=_blank>EDIT</a>`}</p>
       <p class=preflight-date-wrapper>${item.action === 'preview' ? 'Previewing' : prettyDate(item.preview)}</p>
       <p class="preflight-date-wrapper">
         ${isChecked && disablePublish ? html`<span class=disabled-publish>${disablePublish}</span>` : publishText}

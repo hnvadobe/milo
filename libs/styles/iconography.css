@@ -50,8 +50,11 @@ dealing w/ groups of media and associated text
 
 .lockup-area > * { line-height: 0; }
 
-.center .lockup-area { justify-content: center; }
-.right .lockup-area { justify-content: flex-end; }
+.lockup-area a { text-decoration: none; }
+
+.lockup-area a:hover,
+.lockup-area a:focus,
+.lockup-area a:active { text-decoration: underline; }
 
 .xxs-lockup .lockup-area {
   font-size: var(--type-lockup-xxs-size);
@@ -95,6 +98,8 @@ dealing w/ groups of media and associated text
   gap: 20px;
 }
 
+.center:not(.tabs, .section) .lockup-area { justify-content: center; }
+.right:not(.tabs) .lockup-area { justify-content: flex-end; }
 .xxs-lockup .lockup-area img { height: var(--icon-size-xxs); }
 .xs-lockup .lockup-area img { height: var(--icon-size-xs); }
 .s-lockup .lockup-area img { height: var(--icon-size-s); }

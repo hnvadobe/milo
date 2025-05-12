@@ -8,6 +8,7 @@ import {
   arrayToObj,
   getPageLocale,
   getCountryAndLang,
+  stageMapToCaasTransforms,
 } from '../../../libs/blocks/caas/utils.js';
 
 const mockLocales = ['ar', 'br', 'ca', 'ca_fr', 'cl', 'co', 'la', 'mx', 'pe', '', 'africa', 'be_fr', 'be_en', 'be_nl',
@@ -211,7 +212,7 @@ describe('getConfig', () => {
       hideCtaTags: [],
       filterPanel: {
         enabled: true,
-        eventFilter: '',
+        eventFilter: [],
         type: 'left',
         showEmptyFilters: false,
         categories: [
@@ -367,7 +368,7 @@ describe('getConfig', () => {
         loadMoreButton: { style: 'primary', useThemeThree: false },
         type: 'paginator',
         i18n: {
-          loadMore: { btnText: 'Load More', resultsQuantityText: '{start} of {end} displayed' },
+          loadMore: { btnText: 'Load more', resultsQuantityText: '{start} of {end} displayed' },
           paginator: {
             resultsQuantityText: '{start} - {end} of {total} results',
             prevLabel: 'Prev',
@@ -480,7 +481,7 @@ describe('getConfig', () => {
       hideCtaTags: [],
       filterPanel: {
         enabled: true,
-        eventFilter: '',
+        eventFilter: [],
         type: 'left',
         showEmptyFilters: false,
         categories: [
@@ -636,7 +637,7 @@ describe('getConfig', () => {
         loadMoreButton: { style: 'primary', useThemeThree: false },
         type: 'paginator',
         i18n: {
-          loadMore: { btnText: 'Load More', resultsQuantityText: '{start} of {end} displayed' },
+          loadMore: { btnText: 'Load more', resultsQuantityText: '{start} of {end} displayed' },
           paginator: {
             resultsQuantityText: '{start} - {end} of {total} results',
             prevLabel: 'Prev',
@@ -681,6 +682,26 @@ describe('getConfig', () => {
       },
       linkTransformer: {},
     });
+  });
+
+  it('should pass stageDomainsMap as caasLinkTransformer on stage', async () => {
+    expect(stageMapToCaasTransforms({
+      env: { name: 'stage' },
+      stageDomainsMap: { localhost: { 'www.adobe.com': 'stage.adobe.com', 'business.adobe.com': 'origin' } },
+    })).to.eql({
+      enabled: true,
+      hostnameTransforms: [
+        { from: 'www.adobe.com', to: 'stage.adobe.com' },
+        { from: 'business.adobe.com', to: 'localhost' },
+      ],
+    });
+  });
+
+  it('should not pass stageDomainsMap as caasLinkTransformer on prod', async () => {
+    expect(stageMapToCaasTransforms({
+      env: { name: 'prod' },
+      stageDomainsMap: { localhost: { 'www.adobe.com': 'stage.adobe.com', 'business.adobe.com': 'origin' } },
+    })).to.eql({});
   });
 });
 
@@ -825,7 +846,7 @@ describe('getFloodgateCaasConfig', () => {
       hideCtaTags: [],
       filterPanel: {
         enabled: true,
-        eventFilter: '',
+        eventFilter: [],
         type: 'left',
         showEmptyFilters: false,
         categories: [
@@ -981,7 +1002,7 @@ describe('getFloodgateCaasConfig', () => {
         loadMoreButton: { style: 'primary', useThemeThree: false },
         type: 'paginator',
         i18n: {
-          loadMore: { btnText: 'Load More', resultsQuantityText: '{start} of {end} displayed' },
+          loadMore: { btnText: 'Load more', resultsQuantityText: '{start} of {end} displayed' },
           paginator: {
             resultsQuantityText: '{start} - {end} of {total} results',
             prevLabel: 'Prev',

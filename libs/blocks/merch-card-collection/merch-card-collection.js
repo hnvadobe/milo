@@ -1,10 +1,13 @@
+import { initService } from '../merch/merch.js';
 import { overrideUrlOrigin } from '../../utils/helpers.js';
 import {
   createTag, decorateLinks, getConfig, loadBlock, loadStyle, localizeLink,
 } from '../../utils/utils.js';
 import { replaceText } from '../../features/placeholders.js';
 
-const DIGITS_ONLY = /^\d+$/;
+const DIGITS_ONLY = /^\/?\d+\/?$/;
+const FILTER_REGEX = /(filter|\/filter\/)/;
+const SEARCH_REGEX = /search|\/search\//;
 export const OVERRIDE_PATHS = 'overrides';
 
 const LITERAL_SLOTS = [
@@ -40,7 +43,15 @@ const fail = (el, err = '') => {
 
 /** Parse and prepare cards */
 async function getCardsRoot(config, html) {
-  const cards = `<div>${html}</div>`;
+  let cards = `<div>${html}</div>`;
+  const { mep, placeholders } = config;
+  if (mep?.commands?.length) {
+    const mepRoot = createTag('div', {}, cards);
+    const { handleCommands, replacePlaceholders } = await import('../../features/personalization/personalization.js');
+    handleCommands(mep?.commands, mepRoot, false, true);
+    if (placeholders) mepRoot.innerHTML = replacePlaceholders(mepRoot.innerHTML, placeholders);
+    cards = mepRoot.innerHTML;
+  }
   const fragment = document.createRange().createContextualFragment(
     await replaceText(cards, config),
   );
@@ -131,14 +142,8 @@ export function parsePreferences(elements) {
 }
 
 /** Retrieve cards from query-index  */
-async function fetchCardsData(config, type, el) {
+async function fetchCardsData(config, endpointElement, type, el) {
   let cardsData;
-  const usePreviewIndex = config.env.name === 'stage' && !window.location.host.includes('.live');
-  const endpointElement = el.querySelector(`a[href*="${usePreviewIndex ? PREVIEW_INDEX : PROD_INDEX}"]`)
-                            ?? el.querySelector(`a[href*="${PROD_INDEX}"]`);
-  if (!endpointElement) {
-    throw new Error('No query-index endpoint provided');
-  }
   el.querySelector(`a[href*="${PROD_INDEX}"]`)?.remove();
   el.querySelector(`a[href*="${PREVIEW_INDEX}"]`)?.remove();
   let queryIndexCardPath = localizeLink(endpointElement.getAttribute('href'), config);
@@ -183,30 +188,43 @@ export default async function init(el) {
   if (el.classList.length < 2) {
     return fail(el, 'Missing collection type');
   }
+  const initServicePromise = initService();
   const config = getConfig();
   const type = el.classList[1];
-  const cardsDataPromise = fetchCardsData(config, type, el);
 
-  const merchCardCollectionDep = import('../../deps/mas/merch-card-collection.js');
-  const polyfills = import('../merch/merch.js');
-  await polyfills;
-  let deps = [
-    polyfills,
-    merchCardCollectionDep,
-    import('../merch-card/merch-card.js'),
-    import('../../deps/mas/merch-card.js'),
-  ];
-
-  const { base, mep } = getConfig();
-  const merchStyles = new Promise((resolve) => {
-    loadStyle(`${base}/blocks/merch/merch.css`, resolve);
-  });
-  const merchCardStyles = new Promise((resolve) => {
-    loadStyle(`${base}/blocks/merch-card/merch-card.css`, resolve);
-  });
+  const usePreviewIndex = config.env.name === 'stage' && !window.location.host.includes('.live');
+  const endpointElement = el.querySelector(`a[href*="${usePreviewIndex ? PREVIEW_INDEX : PROD_INDEX}"]`)
+                            ?? el.querySelector(`a[href*="${PROD_INDEX}"]`);
+  if (!endpointElement) {
+    return fail(el, 'No query-index endpoint provided');
+  }
 
   let cardsData;
+  let deps;
+  let base;
+  let mep;
+  let merchStyles;
+  let merchCardStyles;
+  const merchCardCollectionDep = import(
+    '../../deps/mas/merch-card-collection.js'
+  );
   try {
+    const cardsDataPromise = fetchCardsData(config, endpointElement, type, el);
+    deps = [
+      initServicePromise,
+      merchCardCollectionDep,
+      import('../merch-card/merch-card.js'),
+      import('../../deps/mas/merch-card.js'),
+    ];
+
+    ({ base, mep } = config);
+    merchStyles = new Promise((resolve) => {
+      loadStyle(`${base}/blocks/merch/merch.css`, resolve);
+    });
+    merchCardStyles = new Promise((resolve) => {
+      loadStyle(`${base}/blocks/merch-card/merch-card.css`, resolve);
+    });
+
     cardsData = await cardsDataPromise;
   } catch (error) {
     return fail(el, error);
@@ -263,23 +281,23 @@ export default async function init(el) {
     }
   }
 
-  const literalsEl = el.lastElementChild?.firstElementChild;
+  const literalsEl = el.lastElementChild?.querySelector('p').parentElement;
   // parse literals
   const literalSlots = [];
-  if (literalsEl && /filter/.test(literalsEl.querySelector('u')?.innerText)) {
+  if (literalsEl && FILTER_REGEX.test(literalsEl.querySelector('u')?.innerText)) {
     literalsEl.querySelectorAll('u').forEach((u) => {
       const text = u.innerText.trim();
       if (DIGITS_ONLY.test(text)) {
         u.outerHTML = '<span data-placeholder="resultCount"></span>';
-      } else if (text === 'search') {
+      } else if (SEARCH_REGEX.test(text)) {
         u.outerHTML = '<span data-placeholder="searchTerm"></span>';
-      } else if (text === 'filter') {
+      } else if (FILTER_REGEX.test(text)) {
         u.outerHTML = '<span data-placeholder="filter"></span>';
       }
     });
     let index = 0;
-    while (literalsEl.firstElementChild) {
-      const literalEl = literalsEl.firstElementChild;
+    while (literalsEl?.firstElementChild) {
+      const literalEl = literalsEl?.firstElementChild;
       let slot;
       if (literalEl.tagName === 'P') {
         slot = literalEl;
@@ -329,5 +347,6 @@ export default async function init(el) {
     'merch-card-collection-render',
     'merch-card-collection-render:start',
   );
+
   return merchCardCollection;
 }

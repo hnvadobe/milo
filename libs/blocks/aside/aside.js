@@ -33,7 +33,7 @@ const blockConfig = {
   },
 };
 const FORMAT_REGEX = /^format:/i;
-const closeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+const closeSvg = `<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
                     <g transform="translate(-10500 3403)">
                       <circle cx="10" cy="10" r="10" transform="translate(10500 -3403)" fill="#707070"></circle>
                       <line y1="8" x2="8" transform="translate(10506 -3397)" fill="none" stroke="#fff" stroke-width="2"></line>
@@ -170,6 +170,19 @@ function loadIconography() {
   return new Promise((resolve) => { loadStyle(`${base}/styles/iconography.css`, resolve); });
 }
 
+export function handleImageLoad(el, image) {
+  if (image && !image.complete) {
+    el.style.visibility = 'hidden';
+    image.addEventListener('load', () => {
+      el.style.visibility = 'visible';
+    });
+    image.addEventListener('error', () => {
+      image.style.visibility = 'hidden';
+      el.style.visibility = 'visible';
+    });
+  }
+}
+
 function decorateLayout(el) {
   const elems = el.querySelectorAll(':scope > div');
   if (elems.length > 1) {
@@ -194,10 +207,13 @@ function decorateLayout(el) {
     const iconClass = iconVariant ? `${iconVariant[1]}-area` : 'icon-area';
     if (iconVariant) loadIconography();
     iconArea.classList.add(iconClass);
+    const image = iconArea.querySelector('img');
+    handleImageLoad(el, image);
   }
   const foregroundImage = foreground.querySelector(':scope > div:not(.text) img')?.closest('div');
   const bgImage = el.querySelector(':scope > div:not(.text):not(.foreground) img')?.closest('div');
-  const foregroundMedia = foreground.querySelector(':scope > div:not(.text) video, :scope > div:not(.text) a:is([href*=".mp4"], [href*="tv.adobe.com"])')?.closest('div');
+  const foregroundMedia = foreground.querySelector(':scope > div:not(.text) :is(.video-container, video, a[href*=".mp4"], a[href*="tv.adobe.com"]), :scope > div:not(.text) iframe[src*="tv.adobe.com"]')
+    ?.closest('div:not(.video-container)');
   const bgMedia = el.querySelector(':scope > div:not(.text):not(.foreground) video, :scope > div:not(.text):not(.foreground) a:is([href*=".mp4"], [href*="tv.adobe.com"])')?.closest('div');
   const image = foregroundImage ?? bgImage;
   const asideMedia = foregroundMedia ?? bgMedia ?? image;
@@ -214,7 +230,23 @@ function decorateLayout(el) {
   } else if (!iconArea) {
     foreground?.classList.add('no-image');
   }
-  if (el.classList.contains('split')) decorateIconStack(el);
+  if (el.classList.contains('split')) {
+    decorateIconStack(el);
+    // TODO: Remove after bugfix PR adobe/helix-html2md#556 is merged
+    const icnStk = el.querySelector('.icon-stack-area');
+    if (icnStk) {
+      const liELs = icnStk.querySelectorAll('li');
+      [...liELs].forEach((liEl) => {
+        liEl.querySelectorAll('p').forEach((pElement) => {
+          while (pElement.firstChild) {
+            pElement.parentNode.insertBefore(pElement.firstChild, pElement);
+          }
+          pElement.remove();
+        });
+      });
+    }
+    // TODO: Remove after bugfix PR adobe/helix-html2md#556 is merged
+  }
   return foreground;
 }
 

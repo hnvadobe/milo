@@ -1,15 +1,17 @@
 /* eslint-disable no-async-promise-executor */
 import {
+  loadBlock,
   decorateAutoBlock,
   decorateLinks,
   getMetadata,
   getConfig,
-  loadBlock,
   localizeLink,
+  loadStyle,
+  getFederatedUrl,
+  getFedsPlaceholderConfig,
 } from '../../utils/utils.js';
 
 import {
-  getFedsPlaceholderConfig,
   getExperienceName,
   getAnalyticsValue,
   loadDecorateMenu,
@@ -22,8 +24,6 @@ import {
   federatePictureSources,
   isDarkMode,
 } from '../global-navigation/utilities/utilities.js';
-
-import { getFederatedUrl } from '../../utils/federated.js';
 
 import { replaceKey } from '../../features/placeholders.js';
 
@@ -67,7 +67,7 @@ class Footer {
       observer.disconnect();
       this.decorateContent();
     }, CONFIG.delays.decoration);
-  }, 'Error in global footer init', 'errorType=error,module=global-footer');
+  }, 'Error in global footer init', 'global-footer', 'e');
 
   decorateContent = () => logErrorFor(async () => {
     // Fetch footer content
@@ -77,7 +77,16 @@ class Footer {
       shouldDecorateLinks: false,
     });
 
-    if (!this.body) return;
+    if (!this.body) {
+      const error = new Error('Could not create global footer. Content not found!');
+      error.tags = 'global-footer';
+      error.url = url;
+      error.errorType = 'e';
+      lanaLog({ message: error.message, ...error });
+      const { onFooterError } = getConfig();
+      onFooterError?.(error);
+      return;
+    }
 
     const [region, social] = ['.region-selector', '.social'].map((selector) => this.body.querySelector(selector));
     const [regionParent, socialParent] = [region?.parentElement, social?.parentElement];
@@ -89,6 +98,9 @@ class Footer {
 
     regionParent?.appendChild(region);
     socialParent?.appendChild(social);
+
+    // Support auto populated modal
+    await Promise.all([...this.body.querySelectorAll('.modal')].map(loadBlock));
 
     const path = getFederatedUrl(url);
     federatePictureSources({ section: this.body, forceFederate: path.includes('/federal/') });
@@ -113,9 +125,10 @@ class Footer {
 
     const mepMartech = mep?.martech || '';
     this.block.setAttribute('daa-lh', `gnav|${getExperienceName()}|footer${mepMartech}`);
-
     this.block.append(this.elements.footer);
-  }, 'Failed to decorate footer content', 'errorType=error,module=global-footer');
+    const { onFooterReady } = getConfig();
+    onFooterReady?.();
+  }, 'Failed to decorate footer content', 'global-footer', 'e');
 
   loadMenuLogic = async () => {
     this.menuLogic = this.menuLogic || new Promise(async (resolve) => {
@@ -155,7 +168,8 @@ class Footer {
       lanaLog({
         message: 'Issue with loadIcons',
         e: `${file.statusText} url: ${file.url}`,
-        tags: 'errorType=info,module=global-footer',
+        tags: 'global-footer',
+        errorType: 'i',
       });
     }
     const content = await file.text();
@@ -180,7 +194,7 @@ class Footer {
 
     if (placeholder && placeholder.length) {
       this.elements.featuredProducts
-        .append(toFragment`<span class="feds-featuredProducts-label">${placeholder}</span>`);
+        .append(toFragment`<span class="feds-featuredProducts-label" role="heading" aria-level="2">${placeholder}</span>`);
     }
 
     featuredProductsContent.querySelectorAll('.link-group').forEach((linkGroup) => {
@@ -200,7 +214,7 @@ class Footer {
     try {
       url = new URL(regionSelector.href);
     } catch (e) {
-      lanaLog({ message: `Could not create URL for region picker; href: ${regionSelector.href}`, tags: 'errorType=error,module=global-footer' });
+      lanaLog({ message: `Could not create URL for region picker; href: ${regionSelector.href}`, tags: 'global-footer', errorType: 'e' });
       return this.elements.regionPicker;
     }
 
@@ -210,14 +224,14 @@ class Footer {
       <a
         href="${regionSelector.href}"
         class="${regionPickerClass}"
-        aria-expanded="false"
-        aria-haspopup="true"
         role="button">
-        <svg xmlns="http://www.w3.org/2000/svg" class="feds-regionPicker-globe" focusable="false">
+        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="feds-regionPicker-globe" focusable="false">
           <use href="#footer-icon-globe" />
         </svg>
         ${regionPickerTextElem}
       </a>`;
+    regionPickerElem.dataset.modalPath = `${url.pathname}#_inline`;
+    regionPickerElem.dataset.modalHash = url.hash;
     const regionPickerWrapperClass = 'feds-regionPicker-wrapper';
     this.elements.regionPicker = toFragment`<div class="${regionPickerWrapperClass}">
         ${regionPickerElem}
@@ -230,25 +244,36 @@ class Footer {
     if (url.hash !== '') {
       // Hash -> region selector opens a modal
       decorateAutoBlock(regionPickerElem); // add modal-specific attributes
-      // TODO remove logs after finding the root cause for the region picker 404s -> MWPW-143627
-      if (regionPickerElem.classList[0] !== 'modal') {
-        lanaLog({
-          message: `Modal block class missing from region picker pre loading the block; locale: ${locale}; regionPickerElem: ${regionPickerElem.outerHTML}`,
-          tags: 'errorType=warn,module=global-footer',
-        });
-      }
-      await loadBlock(regionPickerElem); // load modal logic and styles
-      if (regionPickerElem.classList[0] !== 'modal') {
-        lanaLog({
-          message: `Modal block class missing from region picker post loading the block; locale: ${locale}; regionPickerElem: ${regionPickerElem.outerHTML}`,
-          tags: 'errorType=warn,module=global-footer',
-        });
-      }
-      // 'decorateAutoBlock' logic replaces class name entirely, need to add it back
-      regionPickerElem.classList.add(regionPickerClass);
+      regionPickerElem.href = url.hash;
+      loadStyle(`${base}/blocks/modal/modal.css`);
+      const { default: initModal } = await import('../modal/modal.js');
+      const modal = await initModal(regionPickerElem);
+
+      const loadRegionNav = async () => {
+        const block = document.querySelector('.region-nav');
+        if (block && getConfig().standaloneGnav) {
+          // on standalone the region-nav will fail to load automatically through
+          // the modal calling fragment.js. In that case we will have data-failed=true
+          // and we should manually load region nav
+          // If that's not the case then we're not a standalone gnav
+          // and we mustn't load region-nav twice.
+          if (block.getAttribute('data-failed') !== 'true') return;
+          block.classList.add('hide');
+          loadStyle(`${base}/blocks/region-nav/region-nav.css`);
+          const { default: initRegionNav } = await import('../region-nav/region-nav.js');
+          initRegionNav(block);
+          // decoratePlaceholders(block, getConfig());
+          block.classList.remove('hide');
+        }
+      };
+
+      if (modal) await loadRegionNav(); // just in case the modal is already open
+
       regionPickerElem.addEventListener('click', () => {
         if (!isRegionPickerExpanded()) {
           regionPickerElem.setAttribute('aria-expanded', 'true');
+          // wait for the modal to load before we load the region nav
+          window.addEventListener('milo:modal:loaded', loadRegionNav, { once: true });
         }
       });
       // Set aria-expanded to false when region modal is closed
@@ -259,11 +284,13 @@ class Footer {
       });
     } else {
       // No hash -> region selector expands a dropdown
+      regionPickerElem.setAttribute('aria-haspopup', 'true');
       regionPickerElem.href = '#'; // reset href value to not get treated as a fragment
       regionSelector.href = localizeLink(regionSelector.href);
       decorateAutoBlock(regionSelector); // add fragment-specific class(es)
       this.elements.regionPicker.append(regionSelector); // add fragment after regionPickerElem
-      await loadBlock(regionSelector); // load fragment and replace original link
+      const { default: initFragment } = await import('../fragment/fragment.js');
+      await initFragment(regionSelector); // load fragment and replace original link
       // Update aria-expanded on click
       regionPickerElem.addEventListener('click', (e) => {
         e.preventDefault();
@@ -279,7 +306,7 @@ class Footer {
       });
     }
 
-    return this.regionPicker;
+    return this.elements.regionPicker;
   };
 
   decorateSocial = () => {
@@ -302,7 +329,7 @@ class Footer {
             aria-label="${platform}"
             daa-ll="${getAnalyticsValue(platform, index + 1)}"
             target="_blank">
-            <svg xmlns="http://www.w3.org/2000/svg" class="feds-social-icon" alt="${platform} logo">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="feds-social-icon">
               <use href="#footer-icon-${platform}" />
             </svg>
           </a>
@@ -326,34 +353,71 @@ class Footer {
 
     // Decorate copyright element
     const currentYear = new Date().getFullYear();
-    copyrightElem.replaceWith(toFragment`<span class="feds-footer-copyright">
-        Copyright © ${currentYear} ${copyrightElem.textContent}
-      </span>`);
+    copyrightElem.remove();
 
     // Add Ad Choices icon
     const adChoicesElem = privacyContent.querySelector('a[href*="#interest-based-ads"]');
-    adChoicesElem?.prepend(toFragment`<svg xmlns="http://www.w3.org/2000/svg" class="feds-adChoices-icon" focusable="false">
+    adChoicesElem?.prepend(toFragment`<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="feds-adChoices-icon" focusable="false">
         <use href="#footer-icon-adchoices" />
       </svg>`);
 
     this.elements.legal = toFragment`<div class="feds-footer-legalWrapper" daa-lh="Legal"></div>`;
+    const linkDivider = '<span class="feds-footer-privacyLink-divider" aria-hidden="true">/</span>';
 
+    let privacyContentIndex = 0;
     while (privacyContent.children.length) {
       const privacySection = privacyContent.firstElementChild;
       privacySection.classList.add('feds-footer-privacySection');
       privacySection.querySelectorAll('a').forEach((link, index) => {
         link.classList.add('feds-footer-privacyLink');
         link.setAttribute('daa-ll', getAnalyticsValue(link.textContent, index + 1));
+        const privacySectionListItem = document.createElement('li');
+        privacySectionListItem.classList.add('feds-footer-privacy-listitem');
+        link.parentNode.insertBefore(privacySectionListItem, link);
+        privacySectionListItem.appendChild(link);
+        if (index !== privacySection.querySelectorAll('a').length - 1) {
+          privacySectionListItem.innerHTML += linkDivider;
+        }
       });
       this.elements.legal.append(privacySection);
+
+      if (privacyContentIndex === 0) {
+        const privacySectionList = document.createElement('ul');
+        [...privacySection.attributes].forEach((attr) => {
+          privacySectionList.setAttribute(attr.name, attr.value);
+        });
+        const copyrightListItem = document.createElement('li');
+        copyrightListItem.classList.add('feds-footer-privacy-listitem');
+        copyrightListItem.innerHTML = linkDivider;
+        copyrightListItem.prepend(copyrightElem);
+        copyrightElem.replaceWith(toFragment`<span class="feds-footer-copyright">Copyright © ${currentYear} ${copyrightElem.textContent}</span>`);
+        privacySectionList.prepend(copyrightListItem);
+        privacySectionList.innerHTML += privacySection.innerHTML.replace(/( \/ )/g, '');
+        privacySection.parentNode.replaceChild(privacySectionList, privacySection);
+      }
+      privacyContentIndex += 1;
     }
 
     return this.elements.legal;
   };
 
+  decorateLogo = () => {
+    const logoContainer = this.body.querySelector('.adobe-logo');
+    if (!logoContainer) return '';
+
+    const imageEl = logoContainer.querySelector('picture img[src$=".svg"]');
+    if (!imageEl) return '';
+
+    return toFragment`
+      <a class="footer-logo">
+        <span class="footer-logo-image">${imageEl}</span>
+      </a>`;
+  };
+
   decorateFooter = () => {
     this.elements.footer = toFragment`<div class="feds-footer-wrapper">
         ${this.elements.footerMenu}
+        ${this.decorateLogo()}
         ${this.elements.featuredProducts}
         <div class="feds-footer-options">
           <div class="feds-footer-miscLinks">

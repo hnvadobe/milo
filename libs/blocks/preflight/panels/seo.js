@@ -110,8 +110,11 @@ async function checkDescription() {
 }
 
 async function checkBody() {
+  const nonContentEls = '#preflight, .picture-meta, aem-sidekick';
   const result = { ...bodyResult.value };
-  const { length } = document.documentElement.innerText;
+  const bodyClone = document.body.cloneNode(true);
+  bodyClone.querySelectorAll(nonContentEls).forEach((el) => el.remove());
+  const { length } = bodyClone.innerText.replace(/\n/g, '').trim();
 
   if (length > 100) {
     result.icon = pass;
@@ -127,7 +130,8 @@ async function checkBody() {
 async function checkLorem() {
   const result = { ...loremResult.value };
   const { innerHTML } = document.documentElement;
-  if (innerHTML.includes('Lorem ipsum')) {
+  const htmlWithoutPreflight = innerHTML.replace(document.getElementById('preflight')?.outerHTML, '');
+  if (htmlWithoutPreflight.toLowerCase().includes('lorem ipsum')) {
     result.icon = fail;
     result.description = 'Reason: Lorem ipsum is used on the page.';
   } else {
@@ -226,7 +230,9 @@ async function checkLinks() {
         && !link.closest('.preflight') // Is not inside preflight
         && !knownBadUrls.some((url) => url === link.hostname) // Is not a known bad url
       ) {
-        link.liveHref = link.href.replace('hlx.page', 'hlx.live');
+        link.liveHref = link.href;
+        if (link.href.includes('hlx.page')) link.liveHref = link.href.replace('hlx.page', 'hlx.live');
+        if (link.href.includes('aem.page')) link.liveHref = link.href.replace('aem.page', 'aem.live');
         return true;
       }
       return false;
@@ -236,6 +242,16 @@ async function checkLinks() {
   const baseOpts = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
   const badResults = [];
 
+  [...document.querySelectorAll('a')].forEach((link) => {
+    if (link.dataset?.httpLink) {
+      const httpLink = {
+        url: link.liveHref,
+        status: 'authored as http',
+      };
+      badResults.push(httpLink);
+    }
+  });
+
   for (const group of groups) {
     const urls = group.map((link) => link.liveHref);
     const opts = { ...baseOpts, body: JSON.stringify({ urls }) };
@@ -243,7 +259,8 @@ async function checkLinks() {
     badResults.push(...spidyResults);
   }
 
-  badLinks.value = badResults.map((result) => links.find((link) => compareResults(result, link)));
+  badLinks.value = badResults.map((result) => links.find((link) => compareResults(result, link)))
+    .filter(Boolean);
 
   // Format the results for display
   const count = badLinks.value.length;
@@ -278,7 +295,7 @@ export async function sendResults() {
   };
 
   await fetch(
-    'https://main--milo--adobecom.hlx.page/seo/preflight',
+    'https://main--milo--adobecom.aem.page/seo/preflight',
     {
       method: 'POST',
       credentials: 'same-origin',
@@ -313,15 +330,19 @@ async function getResults() {
   const icons = [h1, title, canon, desc, body, lorem, links];
 
   const red = icons.find((icon) => icon === 'red');
-  if (red) {
-    const sk = document.querySelector('aem-sidekick, helix-sidekick');
-    if (sk) {
-      const publishBtn = sk.shadowRoot.querySelector('div.publish.plugin button');
-      publishBtn.addEventListener('click', () => {
-        sendResults();
-      });
-    }
-  }
+  if (!red) return;
+
+  const aemSk = document.querySelector('aem-sidekick');
+  const hlxSk = document.querySelector('helix-sidekick');
+  if (!aemSk && !hlxSk) return;
+
+  const publishBtn = aemSk
+    ? aemSk.shadowRoot.querySelector('plugin-action-bar').shadowRoot.querySelector('sk-action-button.publish')
+    : hlxSk.shadowRoot.querySelector('div.publish.plugin button');
+
+  publishBtn.addEventListener('click', () => {
+    sendResults();
+  });
 }
 
 export default function Panel() {
@@ -353,9 +374,9 @@ export default function Panel() {
         ${badLinks.value.map((link, idx) => html`
           <tr>
             <td>${idx + 1}.</td>
-            <td><a href='${link.liveHref}' target='_blank'>${link.liveHref}</a></td>
-            <td><span>${link.parent}</span></td>
-            <td><span>${link.status}</span></td>
+            <td><a href='${link?.liveHref}' target='_blank'>${link?.liveHref}</a></td>
+            <td><span>${link?.parent}</span></td>
+            <td><span>${link?.status}</span></td>
           </tr>`)}
       </table>`}
     </div>`;

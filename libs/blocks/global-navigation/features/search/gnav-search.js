@@ -1,6 +1,5 @@
 import {
   toFragment,
-  getFedsPlaceholderConfig,
   isDesktop,
   setCurtainState,
   trigger,
@@ -8,7 +7,7 @@ import {
   logErrorFor,
 } from '../../utilities/utilities.js';
 import { replaceKeyArray } from '../../../../features/placeholders.js';
-import { getConfig } from '../../../../utils/utils.js';
+import { getConfig, getFedsPlaceholderConfig } from '../../../../utils/utils.js';
 import { debounce } from '../../../../utils/action.js';
 
 const CONFIG = {
@@ -34,7 +33,7 @@ class Search {
       this.clearSearchForm();
     });
     observer.observe(this.trigger, { attributeFilter: ['aria-expanded'] });
-    logErrorFor(this.init.bind(this), 'Search init has failed', 'errorType=error,module=gnav-search');
+    logErrorFor(this.init.bind(this), 'Search init has failed', 'errorType=e,module=gnav-search');
   }
 
   async init() {

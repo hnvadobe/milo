@@ -1,4 +1,6 @@
-import { getConfig } from '../../utils/utils.js';
+import { getConfig, getLanguage, getLocale, loadLanguageConfig } from '../../utils/utils.js';
+
+const queriedPages = [];
 
 function setInternational(prefix) {
   const domain = window.location.host.endsWith('.adobe.com') ? 'domain=adobe.com' : '';
@@ -10,25 +12,49 @@ function setInternational(prefix) {
 function handleEvent({ prefix, link, callback } = {}) {
   if (typeof callback !== 'function') return;
 
+  const existingPage = queriedPages.find((page) => page.href === link.href);
+  if (existingPage) {
+    callback(existingPage.resp.ok
+      ? link.href
+      : `${prefix ? `/${prefix}` : ''}/`);
+    return;
+  }
   fetch(link.href, { method: 'HEAD' }).then((resp) => {
+    queriedPages.push({ href: link.href, resp });
     if (!resp.ok) throw new Error('request failed');
     callback(link.href);
   }).catch(() => {
-    const prefixUrl = prefix ? `/${prefix}` : '';
-    callback(`${prefixUrl}/`);
+    callback(`${prefix ? `/${prefix}` : ''}/`);
   });
 }
 
-function decorateLink(link, path) {
+export function decorateLink(link, path, localeToLanguageMap = []) {
   let hrefAdapted;
   let pathname = link.getAttribute('href');
   if (pathname.startsWith('http')) {
     try { pathname = new URL(pathname).pathname; } catch (e) { /* href does not contain domain */ }
   }
-  const linkParts = pathname.split('/');
-  const prefix = linkParts[1] || 'us';
+
+  const { languageMap, languages, locales } = getConfig();
+  const mergedLocales = { ...locales };
+  localeToLanguageMap.forEach((lang) => {
+    const { locale } = lang;
+    if (!mergedLocales[locale]) {
+      mergedLocales[locale] = { ietf: 'none', tk: 'none' };
+    }
+  });
+
+  const currentLocaleObj = languages
+    ? getLanguage(languages, mergedLocales, pathname) : getLocale(mergedLocales, pathname);
+  const prefix = currentLocaleObj.prefix.replace('/', '');
+
   let { href } = link;
   if (href.endsWith('/')) href = href.slice(0, -1);
+
+  if (languageMap && !locales[prefix] && (languages && !languages[prefix])) {
+    const valueInMap = languageMap[prefix];
+    href = href.replace(`/${prefix}`, valueInMap ? `/${valueInMap}` : '');
+  }
   link.href = `${href}${path}`;
 
   link.addEventListener('mouseover', () => {
@@ -47,7 +73,7 @@ function decorateLink(link, path) {
   });
 
   link.addEventListener('click', (e) => {
-    setInternational(prefix);
+    setInternational(prefix === '' ? 'us' : prefix);
     if (hrefAdapted) return;
     e.preventDefault();
     handleEvent({
@@ -60,7 +86,8 @@ function decorateLink(link, path) {
   });
 }
 
-export default function init(block) {
+export default async function init(block) {
+  const { localeToLanguageMap } = await loadLanguageConfig();
   const config = getConfig();
   const divs = block.querySelectorAll(':scope > div');
   if (divs.length < 2) return;
@@ -68,5 +95,5 @@ export default function init(block) {
   if (!links.length) return;
   const { prefix } = config.locale;
   const path = window.location.href.replace(`${window.location.origin}${prefix}`, '').replace('#langnav', '');
-  links.forEach((link) => decorateLink(link, path));
+  links.forEach((link) => decorateLink(link, path, localeToLanguageMap));
 }

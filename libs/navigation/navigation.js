@@ -1,10 +1,12 @@
+import { loadStyle } from '../utils/utils.js';
+
 const blockConfig = [
   {
     key: 'header',
     name: 'global-navigation',
     targetEl: 'header',
     appendType: 'prepend',
-    params: ['imsClientId', 'searchEnabled', 'unav', 'customLinks', 'jarvis'],
+    params: ['imsClientId', 'searchEnabled', 'unav', 'customLinks', 'jarvis', 'selfIntegrateUnav'],
   },
   {
     key: 'footer',
@@ -18,7 +20,7 @@ const blockConfig = [
 const envMap = {
   prod: 'https://www.adobe.com',
   stage: 'https://www.stage.adobe.com',
-  qa: 'https://gnav--milo--adobecom.hlx.page',
+  qa: 'https://gnav--milo--adobecom.aem.page',
 };
 
 const getStageDomainsMap = (stageDomainsMap) => (
@@ -39,6 +41,16 @@ const getStageDomainsMap = (stageDomainsMap) => (
   }
 );
 
+// Production Domain
+const prodDomains = [
+  'milo.adobe.com',
+  'business.adobe.com',
+  'www.adobe.com',
+  'helpx.adobe.com',
+  'stock.adobe.com',
+  'adobecom.github.io',
+];
+
 function getParamsConfigs(configs) {
   return blockConfig.reduce((acc, block) => {
     block.params.forEach((param) => {
@@ -51,6 +63,7 @@ function getParamsConfigs(configs) {
   }, {});
 }
 
+/* eslint import/no-relative-packages: 0 */
 export default async function loadBlock(configs, customLib) {
   const {
     header,
@@ -60,52 +73,116 @@ export default async function loadBlock(configs, customLib) {
     locale = '',
     theme,
     stageDomainsMap = {},
+    allowedOrigins = [],
   } = configs || {};
-  const branch = new URLSearchParams(window.location.search).get('navbranch');
-  const miloLibs = branch ? `https://${branch}--milo--adobecom.hlx.page` : customLib || envMap[env];
   if (!header && !footer) {
     // eslint-disable-next-line no-console
     console.error('Global navigation Error: header and footer configurations are missing.');
     return;
   }
-  // Relative path can't be used, as the script will run on consumer's app
-  const [{ default: bootstrapBlock }, { default: locales }, { setConfig }] = await Promise.all([
-    import(`${miloLibs}/libs/navigation/bootstrapper.js`),
-    import(`${miloLibs}/libs/utils/locales.js`),
-    import(`${miloLibs}/libs/utils/utils.js`),
-  ]);
+  const branch = new URLSearchParams(window.location.search).get('navbranch');
+  const miloLibs = branch ? `https://${branch}--milo--adobecom.aem.page` : customLib || envMap[env];
 
-  const paramConfigs = getParamsConfigs(configs, miloLibs);
+  // The below css imports will fail when using the non-bundled standalone gnav
+  // and fallback to using loadStyle. On the other hand, the bundler will rewrite
+  // the css imports to attach the styles to the head (and point to the dist folder
+  // using the custom StyleLoader plugin found in build.mjs
+  try {
+    await import('./base.css');
+    if (theme === 'dark') {
+      await import('./dark-nav.css');
+    }
+    await import('./navigation.css');
+  } catch (e) {
+    if (theme === 'dark') {
+      loadStyle(`${miloLibs}/libs/navigation/base.css`, () => loadStyle(`${miloLibs}/libs/navigation/dark-nav.css`));
+    } else {
+      loadStyle(`${miloLibs}/libs/navigation/base.css`);
+    }
+    loadStyle(`${miloLibs}/libs/navigation/navigation.css`);
+  }
+
+  // Relative paths work just fine since they exist in the context of this file's origin
+  const [
+    { default: bootstrapBlock },
+    { default: locales },
+    { setConfig, getConfig }] = await Promise.all([
+    import('./bootstrapper.js'),
+    import('../utils/locales.js'),
+    import('../utils/utils.js'),
+  ]);
+  const paramConfigs = getParamsConfigs(configs);
+  const origin = (() => {
+    switch (env) {
+      case 'prod': return 'https://www.adobe.com';
+      case 'stage': return 'https://www.stage.adobe.com';
+      default: return 'https://main--federal--adobecom.aem.page';
+    }
+  })();
   const clientConfig = {
-    clientEnv: env,
-    origin: `https://main--federal--adobecom.hlx.${env === 'prod' ? 'live' : 'page'}`,
-    miloLibs: `${miloLibs}/libs`,
-    pathname: `/${locale}`,
-    locales: configs.locales || locales,
-    contentRoot: authoringPath || footer.authoringPath,
     theme,
-    ...paramConfigs,
+    prodDomains,
+    clientEnv: env,
+    standaloneGnav: true,
+    pathname: `/${locale}`,
+    miloLibs: `${miloLibs}/libs`,
+    locales: configs.locales || locales,
+    contentRoot: authoringPath || footer?.authoringPath,
     stageDomainsMap: getStageDomainsMap(stageDomainsMap),
+    origin,
+    allowedOrigins: [...allowedOrigins, origin],
+    onFooterReady: footer?.onReady,
+    onFooterError: footer?.onError,
+    ...paramConfigs,
   };
   setConfig(clientConfig);
   for await (const block of blockConfig) {
     const configBlock = configs[block.key];
-    try {
-      if (configBlock) {
-        await bootstrapBlock(`${miloLibs}/libs`, {
-          ...block,
-          ...(block.key === 'header' && {
-            unavComponents: configBlock.unav?.unavComponents,
+
+    if (configBlock) {
+      const config = getConfig();
+      const gnavSource = `${config?.locale?.contentRoot}/gnav`;
+      const footerSource = `${config?.locale?.contentRoot}/footer`;
+      if (block.key === 'header') {
+        try {
+          const { default: init } = await import('../blocks/global-navigation/global-navigation.js');
+          await bootstrapBlock(init, {
+            ...block,
+            gnavSource,
+            unavComponents: configBlock.selfIntegrateUnav ? [] : configBlock.unav?.unavComponents,
             redirect: configBlock.redirect,
             layout: configBlock.layout,
             noBorder: configBlock.noBorder,
             jarvis: configBlock.jarvis,
-          }),
-        });
-        configBlock.onReady?.();
+            isLocalNav: configBlock.isLocalNav,
+            mobileGnavV2: configBlock.mobileGnavV2 || 'off',
+          });
+          configBlock.onReady?.();
+        } catch (e) {
+          configBlock.onError?.(e);
+          window.lana.log(`${e.message} | gnav-source: ${gnavSource} | href: ${window.location.href}`, {
+            clientId: 'feds-milo',
+            tags: 'standalone-gnav',
+            errorType: e.errorType,
+          });
+        }
       }
-    } catch (e) {
-      configBlock.onError?.(e);
+      if (block.key === 'footer') {
+        import('./footer.css').catch(() => {
+          loadStyle(`${miloLibs}/libs/navigation/footer.css`);
+        });
+        try {
+          const { default: init } = await import('../blocks/global-footer/global-footer.js');
+          await bootstrapBlock(init, { ...block, footerSource });
+        } catch (e) {
+          configBlock.onError?.(e);
+          window.lana.log(`${e.message} | footer-source: ${footerSource} | href: ${window.location.href}`, {
+            clientId: 'feds-milo',
+            tags: 'standalone-footer',
+            errorType: e.errorType,
+          });
+        }
+      }
     }
   }
 }

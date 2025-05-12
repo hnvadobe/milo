@@ -11,8 +11,7 @@ function createDynamicSlots(el, bodySlot) {
   if (pricePlaceholder) {
     pricePlaceholder.setAttribute('slot', 'price');
   } else {
-    const tagName = isTWP ? 'p' : 'h5';
-    const priceSlot = createTag(tagName, { class: 'merch-card-price' });
+    const priceSlot = createTag('p', { class: 'merch-card-price' });
     createTag('span', { slot: 'price', is: 'inline-price' }, null, { parent: priceSlot });
     bodySlot.append(priceSlot);
   }
@@ -28,7 +27,8 @@ function createDynamicSlots(el, bodySlot) {
 }
 
 function createMerchOffer(option, quantitySelector, variant) {
-  const merchOffer = createTag('merch-offer', { [quantitySelector ? 'value' : 'text']: option.childNodes[0].textContent.trim() });
+  const radioBtnText = Array.from(option.childNodes)?.find((childNode) => childNode.textContent.trim() !== '')?.textContent.trim();
+  const merchOffer = createTag('merch-offer', { [quantitySelector ? 'value' : 'text']: radioBtnText });
   [...option.querySelector('ul').children].forEach((li, index) => {
     const override = li.childNodes[0];
     if (override.nodeName === '#text') {

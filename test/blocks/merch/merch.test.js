@@ -9,7 +9,6 @@ import merch, {
   PRICE_TEMPLATE_OPTICAL,
   PRICE_TEMPLATE_STRIKETHROUGH,
   PRICE_TEMPLATE_ANNUAL,
-  CHECKOUT_ALLOWED_KEYS,
   buildCta,
   getCheckoutContext,
   initService,
@@ -21,12 +20,14 @@ import merch, {
   getCheckoutAction,
   PRICE_TEMPLATE_REGULAR,
   getMasBase,
+  getOptions,
   appendTabName,
   appendExtraOptions,
   getMiloLocaleSettings,
   reopenModal,
   setCtaHash,
   openModal,
+  PRICE_TEMPLATE_LEGAL,
 } from '../../../libs/blocks/merch/merch.js';
 
 import { mockFetch, unmockFetch, readMockText } from './mocks/fetch.js';
@@ -75,6 +76,14 @@ const CHECKOUT_LINK_CONFIGS = {
   {
     PRODUCT_FAMILY: 'testProductCode',
     DOWNLOAD_TEXT: 'productCode',
+  },
+  {
+    PRODUCT_FAMILY: 'AUDITION',
+    DOWNLOAD_TEXT: 'Download',
+    DOWNLOAD_URL: 'https://creativecloud.adobe.com/apps/download/audition',
+    FREE_TRIAL_PATH: 'https://www.adobe.com/mini-plans/audition.html?mid=ft&web=1',
+    BUY_NOW_PATH: 'www.adobe.com/will/not/be/localized.html',
+    LOCALE: '',
   },
   ],
 };
@@ -193,6 +202,17 @@ describe('Merch Block', () => {
         { prefix: '/africa', expectedLocale: 'en_MU' },
         { prefix: '', expectedLocale: 'en_US' },
         { prefix: '/ae_ar', expectedLocale: 'ar_AE' },
+        { prefix: '/langstore/en', expectedLocale: 'en_US' },
+        { prefix: '/langstore/es', expectedLocale: 'es_ES' },
+        { prefix: '/langstore/de', expectedLocale: 'de_DE' },
+        { prefix: '/langstore/id', expectedLocale: 'id_ID' },
+        { prefix: '/langstore/hi', expectedLocale: 'hi_IN' },
+        { prefix: '/langstore/ar', expectedLocale: 'ar_DZ' },
+        { prefix: '/langstore/nb', expectedLocale: 'nb_NO' },
+        { prefix: '/langstore/zh-hant', expectedLocale: 'zh-hant_TW' },
+        { prefix: '/langstore/el', expectedLocale: 'el_GR' },
+        { prefix: '/langstore/uk', expectedLocale: 'uk_UA' },
+        { prefix: '/langstore/es-419', expectedLocale: 'es-419_ES' },
       ].forEach(({ prefix, expectedLocale }) => {
         const computedLocale = getMiloLocaleSettings({ prefix })?.locale;
         expect(computedLocale).to.equal(expectedLocale);
@@ -290,6 +310,13 @@ describe('Merch Block', () => {
 
     it('renders merch link to full promo price', async () => {
       await validatePriceSpan('.fragment .merch.price.promo', { promotionCode: 'nicopromo' });
+    });
+  });
+
+  describe('Prices: legal template', () => {
+    it('renders merch link with legal template', async () => {
+      const el = await validatePriceSpan('.merch.price.legal', { template: PRICE_TEMPLATE_LEGAL });
+      expect(el.textContent).to.equal('per license (Annual, paid monthly.)');
     });
   });
 
@@ -400,19 +427,6 @@ describe('Merch Block', () => {
       expect(dataset.promotionCode).to.equal('nicopromo');
     });
 
-    it('renders merch link to UCv2 cta with link-level overrides', async () => {
-      const el = await merch(document.querySelector(
-        '.merch.cta.link-overrides',
-      ));
-      const { nodeName, dataset } = await el.onceSettled();
-      expect(nodeName).to.equal('A');
-      expect(el.getAttribute('is')).to.equal('checkout-link');
-      // https://wiki.corp.adobe.com/pages/viewpage.action?spaceKey=BPS&title=UCv2+Link+Creation+Guide
-      expect(dataset.checkoutWorkflow).to.equal('UCv2');
-      expect(dataset.checkoutWorkflowStep).to.equal('checkout');
-      expect(dataset.checkoutMarketSegment).to.equal('EDU');
-    });
-
     it('adds ims country to checkout link', async () => {
       await mockIms('CH');
       await initService();
@@ -486,14 +500,36 @@ describe('Merch Block', () => {
     describe('openModal', () => {
       it('sets the new hash and event listener to restore the hash on close', async () => {
         const prevHash = window.location.hash;
-        const event = new CustomEvent('dummy');
-        await openModal(event, 'https://www.adobe.com/mini-plans/creativecloud.html?mid=ft&web=1', 'TRIAL', 'try-photoshop');
+        await openModal(new CustomEvent('test'), 'https://www.adobe.com/mini-plans/creativecloud.html?mid=ft&web=1', 'TRIAL', 'try-photoshop');
         expect(window.location.hash).to.equal('#try-photoshop');
         const modalCloseEvent = new CustomEvent('milo:modal:closed');
         window.dispatchEvent(modalCloseEvent);
         expect(window.location.hash).to.equal(prevHash);
         document.body.querySelector('.dialog-modal').remove();
         window.location.hash = prevHash;
+      });
+
+      it('opens the 3-in-1 modal', async () => {
+        const checkoutLink = document.createElement('a');
+        checkoutLink.setAttribute('is', 'checkout-link');
+        checkoutLink.setAttribute('data-checkout-workflow', 'UCv3');
+        checkoutLink.setAttribute('data-checkout-workflow-step', 'segmentation');
+        checkoutLink.setAttribute('data-modal', 'true');
+        checkoutLink.setAttribute('data-quantity', '1');
+        checkoutLink.setAttribute('data-wcs-osi', 'L2C9cKHNNDaFtBVB6GVsyNI88RlyimSlzVfkMM2gH4A');
+        checkoutLink.setAttribute('data-extra-options', '{}');
+        checkoutLink.setAttribute('class', 'con-button placeholder-resolved');
+        checkoutLink.setAttribute('href', 'https://commerce.adobe.com/store/segmentation?ms=COM&ot=TRIAL&pa=phsp_direct_individual&cli=adobe_com&ctx=if&co=US&lang=en');
+        checkoutLink.setAttribute('daa-ll', 'Free trial-1--');
+        checkoutLink.setAttribute('data-modal-id', 'mini-plans-web-cta-photoshop-card');
+        checkoutLink.setAttribute('data-modal-type', 'twp');
+        Object.defineProperty(checkoutLink, 'isOpen3in1Modal', { get: () => true });
+        await openModal(new CustomEvent('test'), 'https://www.adobe.com/mini-plans/creativecloud.html?mid=ft&web=1', 'TRIAL', 'try-photoshop', {}, checkoutLink);
+        const threeInOneModal = document.querySelector('.dialog-modal.three-in-one');
+        expect(threeInOneModal).to.exist;
+        const iFrame = document.querySelector('.dialog-modal.three-in-one iframe');
+        expect(iFrame.src).to.equal('https://commerce.adobe.com/store/segmentation?ms=COM&ot=TRIAL&pa=phsp_direct_individual&cli=adobe_com&ctx=if&co=US&lang=en');
+        threeInOneModal.remove();
       });
     });
   });
@@ -620,33 +656,6 @@ describe('Merch Block', () => {
       document.querySelector('.modal-curtain').click();
     });
 
-    it('renders Milo TWP modal', async () => {
-      mockIms();
-      const el = document.querySelector('.merch.cta.milo.twp');
-      const cta = await merch(el);
-      const { nodeName, textContent } = await cta.onceSettled();
-      expect(nodeName).to.equal('A');
-      expect(textContent).to.equal('Free Trial');
-      expect(cta.getAttribute('href')).to.equal('#');
-      cta.click();
-      await delay(100);
-      let modal = document.getElementById('checkout-link-modal');
-      expect(modal.querySelector('[data-path]').dataset.path).to.equal('/test/blocks/merch/mocks/fragments/twp');
-      expect(modal.querySelector('h1').innerText).to.equal('twp modal');
-      document.querySelector('.modal-curtain').click();
-      await delay(100);
-      const [,,,, checkoutLinkConfig] = CHECKOUT_LINK_CONFIGS.data;
-      checkoutLinkConfig.FREE_TRIAL_PATH = 'http://main--milo--adobecom.hlx.page/test/blocks/merch/mocks/fragments/twp-url';
-      await cta.render();
-      cta.click();
-      await delay(100);
-      modal = document.getElementById('checkout-link-modal');
-      expect(modal.querySelector('h1').innerText).to.equal('twp modal #2');
-      expect(modal.querySelector('[data-path]').dataset.path).to.equal('/test/blocks/merch/mocks/fragments/twp-url');
-      document.querySelector('.modal-curtain').click();
-      await delay(100);
-    });
-
     it('renders D2P modal', async () => {
       mockIms();
       const el = document.querySelector('.merch.cta.d2p');
@@ -707,6 +716,34 @@ describe('Merch Block', () => {
       expect(action).to.be.undefined;
     });
 
+    it('getModalAction: localize buy now path if it comes from us/en production', async () => {
+      setConfig({
+        ...config,
+        pathname: '/fr/test.html',
+        locales: { fr: { ietf: 'fr-FR' } },
+        prodDomains: PROD_DOMAINS,
+        placeholders: { download: 'Télécharger' },
+      });
+      fetchCheckoutLinkConfigs.promise = undefined;
+      setCheckoutLinkConfigs(CHECKOUT_LINK_CONFIGS);
+      const action = await getModalAction([{ productArrangement: { productFamily: 'ILLUSTRATOR' } }], { modal: true });
+      expect(action.url).to.equal('https://www.adobe.com/fr/plans-fragments/modals/individual/modals-content-rich/illustrator/master.modal.html');
+    });
+
+    it('getModalAction: skip modal url localization if url is invalid', async () => {
+      setConfig({
+        ...config,
+        pathname: '/fr/test.html',
+        locales: { fr: { ietf: 'fr-FR' } },
+        prodDomains: PROD_DOMAINS,
+        placeholders: { download: 'Télécharger' },
+      });
+      fetchCheckoutLinkConfigs.promise = undefined;
+      setCheckoutLinkConfigs(CHECKOUT_LINK_CONFIGS);
+      const action = await getModalAction([{ productArrangement: { productFamily: 'AUDITION' } }], { modal: true });
+      expect(action.url).to.equal('www.adobe.com/will/not/be/localized.html');
+    });
+
     it('getModalAction: returns undefined if checkout-link config is not found', async () => {
       fetchCheckoutLinkConfigs.promise = undefined;
       setCheckoutLinkConfigs(CHECKOUT_LINK_CONFIGS);
@@ -746,6 +783,11 @@ describe('Merch Block', () => {
         urlWithPlan: 'https://www.adobe.com/mini-plans/illustrator4.html?plan=edu',
       },
       {
+        url: '/mini-plans/illustrator4.html',
+        plan: 'edu',
+        urlWithPlan: '/mini-plans/illustrator4.html?plan=edu',
+      },
+      {
         url: 'https://www.adobe.com/mini-plans/illustrator5.html#thisishash',
         plan: 'edu',
         urlWithPlan: 'https://www.adobe.com/mini-plans/illustrator5.html?plan=edu#thisishash',
@@ -764,6 +806,11 @@ describe('Merch Block', () => {
         url: 'https://www.adobe.com/mini-plans/illustrator8.selector.html/resource?mid=ft&web=1#thisishash',
         plan: 'team',
         urlWithPlan: 'https://www.adobe.com/mini-plans/illustrator8.selector.html/resource?mid=ft&web=1&plan=team#thisishash',
+      },
+      {
+        url: '/mini-plans/illustrator8.selector.html/resource?mid=ft&web=1#thisishash',
+        plan: 'team',
+        urlWithPlan: '/mini-plans/illustrator8.selector.html/resource?mid=ft&web=1&plan=team#thisishash',
       },
       {
         url: 'https://www.adobe.com/mini-plans/illustrator9.sel1.sel2.html/resource#thisishash',
@@ -804,62 +851,6 @@ describe('Merch Block', () => {
     });
   });
 
-  describe('checkout link with optional params', async () => {
-    const checkoutUcv2Keys = [
-      'rurl', 'authCode', 'curl',
-    ];
-    const checkoutAllowKeysMapping = {
-      quantity: 'q',
-      checkoutPromoCode: 'apc',
-      ctxrturl: 'ctxRtUrl',
-      country: 'co',
-      language: 'lang',
-      clientId: 'cli',
-      context: 'ctx',
-      productArrangementCode: 'pa',
-      offerType: 'ot',
-      marketSegment: 'ms',
-      authCode: 'code',
-      rurl: 'rUrl',
-      curl: 'cUrl',
-    };
-    const segmentation = [
-      'ot',
-      'pa',
-      'ms',
-    ];
-
-    const keyValueMapping = { lang: 'en', ms: 'COM', ot: 'BASE', pa: 'phsp_direct_individual' };
-
-    const skipKeys = ['quantity', 'co', 'country', 'lang', 'language'];
-
-    CHECKOUT_ALLOWED_KEYS.forEach((key) => {
-      if (skipKeys.includes(key)) return;
-      const mappedKey = checkoutAllowKeysMapping[key] ?? key;
-      it(`renders checkout link with "${mappedKey}" parameter`, async () => {
-        const a = document.createElement('a', { is: 'checkout-link' });
-        a.classList.add('merch');
-        const searchParams = new URLSearchParams();
-        searchParams.set('osi', 1);
-        searchParams.set('type', 'checkoutUrl');
-        if (checkoutUcv2Keys.includes(key)) {
-          searchParams.set('workflow', 'ucv2');
-        }
-        const value = keyValueMapping[mappedKey] ?? 'test';
-        searchParams.set(key, value);
-        if (segmentation.includes(mappedKey)) {
-          searchParams.set('workflowStep', 'segmentation');
-        }
-        a.setAttribute('href', `/tools/ost?${searchParams.toString()}`);
-        document.body.appendChild(a);
-        const el = await merch(a);
-        await el.onceSettled();
-        expect(el.getAttribute('href')).to.match(new RegExp(`https://commerce.adobe.com/.*${mappedKey}=${value}`));
-        el.remove();
-      });
-    });
-  });
-
   describe('locale settings', () => {
     it('should map correct commerce locale', async () => {
       [
@@ -874,18 +865,23 @@ describe('Merch Block', () => {
     });
   });
 
-  describe('AU resources', () => {
-    it('Load AU styles', async () => {
-      setConfig({
-        ...config,
-        pathname: '/au/test.html',
-        locales: { au: { ietf: 'en-AU' } },
-        prodDomains: PROD_DOMAINS,
-        placeholders: { download: 'Download' },
-        locale: { prefix: '/au' },
-      });
-      await mockIms('AU');
-      await initService(true);
+  describe('getOptions method', () => {
+    it('gets fragment id', () => {
+      const a = document.createElement('a');
+      a.setAttribute('href', 'https://mas.adobe.com/studio.html#content-type=merch-card-collection&path=acom&fragment=07b8be51-492a-4814-9953-a657fd3d9f67');
+      expect(getOptions(a).fragment).to.equal('07b8be51-492a-4814-9953-a657fd3d9f67');
+    });
+
+    it('gets fragment id from query', () => {
+      const a = document.createElement('a');
+      a.setAttribute('href', 'https://mas.adobe.com/studio.html#content-type=merch-card-collection&path=acom&query=07b8be51-492a-4814-9953-a657fd3d9f67');
+      expect(getOptions(a).fragment).to.equal('07b8be51-492a-4814-9953-a657fd3d9f67');
+    });
+
+    it('handles missing fragment id', () => {
+      const a = document.createElement('a');
+      a.setAttribute('href', 'https://mas.adobe.com/studio.html#content-type=merch-card-collection&path=acom');
+      expect(getOptions(a).fragment).to.be.undefined;
     });
   });
 });

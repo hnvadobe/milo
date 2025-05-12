@@ -6,12 +6,13 @@
   /* stylelint-disable-next-line custom-property-pattern */
   --global-height-navPromo: 72px;
   --feds-totalheight-nav: calc(var(--feds-height-nav, --global-height-nav) + var(--feds-height-breadcrumbs, --global-height-breadcrumbs));
+  --feds-localnav-height: 40px;
 
   /* Colors */
-  --link-color: #035fe6;
-  --link-hover-color: #136ff6;
-  --link-color-dark: #1473E6;
-  --link-hover-color-dark: #0d66d0;
+  --link-color: rgb(39, 77, 234);
+  --link-hover-color: rgb(29, 62, 207);
+  --link-color-dark: rgb(59, 99, 251);
+  --link-hover-color-dark: rgb(39, 77, 234);
   --background-color: #fff;
   --overlay-background-color: #ffffff20;
   --highlight-background-color: #ffffff40;
@@ -128,9 +129,6 @@
   --icon-size-s: 32px;
   --icon-size-xs: 24px;
   --icon-size-xxs: 16px;
-
-  /* z-index */
-  --above-all: 9000; /* Used for page tools that overlay page content */
 }
 
 :root:lang(ar) {
@@ -203,6 +201,7 @@
 .heading-m,
 .heading-s,
 .heading-xs,
+.heading-xxs,
 .body-xxl,
 .body-xl,
 .body-l,
@@ -250,6 +249,11 @@
 .heading-xs {
   font-size: var(--type-heading-xs-size);
   line-height: var(--type-heading-xs-lh);
+}
+
+.heading-xxs {
+  font-size: var(--type-heading-xxs-size);
+  line-height: var(--type-heading-xxs-lh);
 }
 
 .body-xxl {
@@ -441,6 +445,10 @@ img {
   height: auto;
 }
 
+blockquote {
+  margin: 0 0 var(--spacing-s) 0;
+}
+
 svg.icon-milo, img.icon-milo {
   height: 1em;
   position: relative;
@@ -563,6 +571,10 @@ span.icon.margin-inline-end { margin-inline-end: 8px; }
 
 span.icon.margin-inline-start { margin-inline-start: 8px; }
 
+span.icon.milo-tooltip.margin-inline-end { margin-inline-end: 3px; }
+
+span.icon.milo-tooltip.margin-inline-start { margin-inline-start: 3px; }
+
 .button-l .con-button span.icon.margin-left,
 .con-button.button-l span.icon.margin-left { margin-left: 12px; }
 
@@ -570,6 +582,7 @@ span.icon.margin-inline-start { margin-inline-start: 8px; }
 .con-button.button-xl span.icon.margin-left { margin-left: 14px; }
 
 /* Con Block Utils */
+.con-block.xxs-spacing { padding: var(--spacing-xxs) 0; }
 .con-block.xs-spacing { padding: var(--spacing-xs) 0; }
 .con-block.s-spacing { padding: var(--spacing-s) 0; }
 .con-block.m-spacing { padding: var(--spacing-m) 0; }
@@ -579,6 +592,7 @@ span.icon.margin-inline-start { margin-inline-start: 8px; }
 .con-block.xxxl-spacing { padding: var(--spacing-xxxl) 0; }
 .con-block.no-spacing { padding: 0; }
 
+.con-block.xxs-spacing-top { padding-top: var(--spacing-xxs); }
 .con-block.xs-spacing-top { padding-top: var(--spacing-xs); }
 .con-block.s-spacing-top { padding-top: var(--spacing-s); }
 .con-block.m-spacing-top { padding-top: var(--spacing-m); }
@@ -588,6 +602,7 @@ span.icon.margin-inline-start { margin-inline-start: 8px; }
 .con-block.xxxl-spacing-top { padding-top: var(--spacing-xxxl); }
 .con-block.no-spacing-top { padding-top: 0; }
 
+.con-block.xxs-spacing-bottom { padding-bottom: var(--spacing-xxs); }
 .con-block.xs-spacing-bottom { padding-bottom: var(--spacing-xs); }
 .con-block.s-spacing-bottom { padding-bottom: var(--spacing-s); }
 .con-block.m-spacing-bottom { padding-bottom: var(--spacing-m); }
@@ -603,6 +618,7 @@ span.icon.margin-inline-start { margin-inline-start: 8px; }
 
 div[class*='-up'] .con-block.full-width { grid-column: 1 /-1; }
 div[class*='-up'] .con-block.has-bg { padding: var(--spacing-m); }
+div[class*='-up'] .con-block.has-bg.xxs-spacing { padding: var(--spacing-xxs); }
 div[class*='-up'] .con-block.has-bg.xs-spacing { padding: var(--spacing-xs); }
 div[class*='-up'] .con-block.has-bg.s-spacing { padding: var(--spacing-s); }
 div[class*='-up'] .con-block.has-bg.m-spacing { padding: var(--spacing-m); }
@@ -680,7 +696,7 @@ body {
   opacity: 1 !important; /* Fix Target hiding */
 }
 
-header:not(.global-navigation) {
+header.gnav {
   height: 57px;
   position: fixed;
   top: 0;
@@ -692,11 +708,11 @@ header:not(.global-navigation) {
   box-sizing: border-box;
 }
 
-header:not(.global-navigation) nav {
+header.gnav nav {
   display: none;
 }
 
-header:not(.global-navigation) ~ main {
+header.gnav ~ main {
   margin-top: 57px;
 }
 
@@ -704,21 +720,56 @@ header:not(.global-navigation) ~ main {
   After switching from the Milo nav to the FEDS one,
   only the styles with 'header.global-navigation' need to be kept;
   the 'global-navigation' class should also be removed from the 'header' selector
-  all of the ':not(.global-navigation)' rules can be entirely removed.
+  all of the 'header.gnav' rules can be entirely removed.
  */
 header.global-navigation, header.global-navigation.feds--dark {
   height: var(--global-height-nav);
   visibility: hidden;
 }
 
+header.global-navigation a {
+  text-decoration: unset;
+}
+
+header.global-navigation + .feds-localnav {
+  display: block;
+  height: var(--feds-localnav-height);
+}
+
+.feds-promo-aside-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 11;
+  height: var(--global-height-navPromo);
+}
+
+sr-only, .feds-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 header.global-navigation.has-promo {
-  height: auto;
-  min-height: calc(var(--global-height-nav) + var(--global-height-navPromo));
+  top: var(--global-height-navPromo);
+}
+
+header.global-navigation.new-nav.local-nav {
+  top: 0;
 }
 
 @media (min-width: 900px) {
   header.global-navigation.has-breadcrumbs {
     padding-bottom: var(--global-height-breadcrumbs);
+  }
+
+  header.global-navigation + .feds-localnav {
+    display: none;
   }
 }
 
@@ -784,25 +835,44 @@ a.fragment {
 
 a {
   color: var(--link-color);
-  text-decoration: none;
+  text-decoration: underline;
 }
 
 a:hover {
-  text-decoration: underline;
   color: var(--link-hover-color);
+}
+
+a:has(> sub:only-child) { text-decoration: unset; }
+a > sub:only-child { text-decoration: underline; }
+
+/* Links Quiet */
+a.quiet,
+a.quiet:hover,
+a.quiet:focus,
+a.quiet:active {
+  text-decoration: none;
 }
 
 /* Links Static */
 a.static,
-a.static:hover {
+a.static:hover,
+a.static:focus,
+a.static:active  {
   color: var(--text-color);
-  text-decoration: underline;
 }
 
 .dark a.static,
-.dark a.static:hover {
+.dark a.static:hover,
+.dark a.static:focus,
+.dark a.static:active {
   color: var(--color-white);
-  text-decoration: underline;
+}
+
+:is(h1, h2, h3, h4, h5, h6) a,
+:is(h1, h2, h3, h4, h5, h6) a:hover,
+:is(h1, h2, h3, h4, h5, h6) a:focus,
+:is(h1, h2, h3, h4, h5, h6) a:active {
+  color: currentColor;
 }
 
 /* Buttons */
@@ -812,7 +882,6 @@ a.static:hover {
 
 .static-links a:not([class*="button"]) {
   color: inherit;
-  text-decoration: underline;
 }
 
 .copy-link {
@@ -822,6 +891,17 @@ a.static:hover {
 /* Tooltip */
 .tooltip-wrapper {
   visibility: hidden;
+}
+
+/* Anchors */
+.section-anchor {
+  scroll-margin-top: var(--global-height-nav);
+}
+
+@media screen and (min-width: 600px) {
+  .global-navigation.has-breadcrumbs + main .section-anchor {
+    scroll-margin-top: var(--feds-totalheight-nav);
+  }
 }
 
 /* mobile only */
@@ -859,6 +939,7 @@ a.static:hover {
   .con-block .background .tablet-only { display: block; }
 
   /* spacing */
+  .con-block.xxs-spacing-tablet { padding: var(--spacing-xxs) 0; }
   .con-block.xs-spacing-tablet { padding: var(--spacing-xs) 0; }
   .con-block.s-spacing-tablet { padding: var(--spacing-s) 0; }
   .con-block.m-spacing-tablet { padding: var(--spacing-m) 0; }
@@ -868,6 +949,7 @@ a.static:hover {
   .con-block.xxxl-spacing-tablet { padding: var(--spacing-xxxl) 0; }
   .con-block.no-spacing-tablet { padding: 0; }
 
+  .con-block.xxs-spacing-top-tablet { padding-top: var(--spacing-xxs); }
   .con-block.xs-spacing-top-tablet { padding-top: var(--spacing-xs); }
   .con-block.s-spacing-top-tablet { padding-top: var(--spacing-s); }
   .con-block.m-spacing-top-tablet { padding-top: var(--spacing-m); }
@@ -877,6 +959,7 @@ a.static:hover {
   .con-block.xxxl-spacing-top-tablet { padding-top: var(--spacing-xxxl); }
   .con-block.no-spacing-top-tablet { padding-top: 0; }
 
+  .con-block.xxs-spacing-bottom-tablet { padding-bottom: var(--spacing-xxs); }
   .con-block.xs-spacing-bottom-tablet { padding-bottom: var(--spacing-xs); }
   .con-block.s-spacing-bottom-tablet { padding-bottom: var(--spacing-s); }
   .con-block.m-spacing-bottom-tablet { padding-bottom: var(--spacing-m); }
@@ -893,25 +976,25 @@ a.static:hover {
 
 /* tablet large up */
 @media (min-width: 900px) {
-  header:not(.global-navigation) {
+  header.gnav {
     min-height: var(--global-height-nav);
     border-bottom: 1px solid #EAEAEA;
     overflow: unset;
   }
 
-  header:not(.global-navigation) ~ main {
+  header.gnav ~ main {
     margin-top: 64px;
   }
 
-  header:not(.global-navigation).has-breadcrumbs {
+  header.gnav.has-breadcrumbs {
     min-height: 97px;
   }
 
-  header:not(.global-navigation) nav {
+  header.gnav nav {
     display: unset;
   }
 
-  header:not(.global-navigation).has-breadcrumbs + main {
+  header.gnav.has-breadcrumbs + main {
     margin-top: 97px;
   }
 }
@@ -931,6 +1014,7 @@ a.static:hover {
   .con-block .background .desktop-only { display: block; }
 
   /* spacing */
+  .con-block.xxs-spacing-desktop { padding: var(--spacing-xxs) 0; }
   .con-block.xs-spacing-desktop { padding: var(--spacing-xs) 0; }
   .con-block.s-spacing-desktop { padding: var(--spacing-s) 0; }
   .con-block.m-spacing-desktop { padding: var(--spacing-m) 0; }
@@ -940,6 +1024,7 @@ a.static:hover {
   .con-block.xxxl-spacing-desktop { padding: var(--spacing-xxxl) 0; }
   .con-block.no-spacing-desktop { padding: 0; }
 
+  .con-block.xxs-spacing-top-desktop { padding-top: var(--spacing-xxs); }
   .con-block.xs-spacing-top-desktop { padding-top: var(--spacing-xs); }
   .con-block.s-spacing-top-desktop { padding-top: var(--spacing-s); }
   .con-block.m-spacing-top-desktop { padding-top: var(--spacing-m); }
@@ -949,6 +1034,7 @@ a.static:hover {
   .con-block.xxxl-spacing-top-desktop { padding-top: var(--spacing-xxxl); }
   .con-block.no-spacing-top-desktop { padding-top: 0; }
 
+  .con-block.xxs-spacing-bottom-desktop { padding-bottom: var(--spacing-xxs); }
   .con-block.xs-spacing-bottom-desktop { padding-bottom: var(--spacing-xs); }
   .con-block.s-spacing-bottom-desktop { padding-bottom: var(--spacing-s); }
   .con-block.m-spacing-bottom-desktop { padding-bottom: var(--spacing-m); }

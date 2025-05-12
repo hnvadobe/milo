@@ -4,10 +4,12 @@ import { foundDisableValues } from './dynamic-navigation.js';
 export const ACTIVE = 'active';
 export const ENABLED = 'enabled';
 export const INACTIVE = 'inactive';
+export const RESET = 'reset';
 export const tooltipInfo = {
   active: 'Displayed in green, this status appears when a user is on an entry page or a page with the Dynamic Nav enabled, indicating that the nav is fully functioning.',
   enabled: 'Displayed in yellow, this status indicates that the Dynamic Nav is set to "on," but the user has not yet visited an entry page.',
   inactive: 'Displayed in red, this status indicates that the Dynamic Nav is either not configured or has been disabled.',
+  reset: 'Displayed in grey, this status indicates that this page resets the Dynamic Nav.',
 };
 
 const getCurrentSource = (status, storageSource, authoredSource) => {
@@ -19,6 +21,8 @@ const getCurrentSource = (status, storageSource, authoredSource) => {
 
 const getStatus = (status, disabled, storageSource) => {
   if (status === 'entry') return ACTIVE;
+
+  if (status === 'reset') return RESET;
 
   if (disabled) return INACTIVE;
 
@@ -80,7 +84,13 @@ const createStatusWidget = (dynamicNavKey) => {
   const currentSource = getCurrentSource(dynamicNavSetting, storedSource, authoredSource);
   const dynamicNavDisableValues = getMetadata('dynamic-nav-disable');
   const foundValues = foundDisableValues();
-  const status = getStatus(dynamicNavSetting, foundValues.length >= 1, storedSource);
+  const groupMetaSetting = getMetadata('dynamic-nav-group') || 'Group not set';
+  const storedDyanmicNavGroup = window.sessionStorage.getItem('dynamicNavGroup');
+  const groupsMatch = storedDyanmicNavGroup
+    && groupMetaSetting.toLowerCase() === storedDyanmicNavGroup.toLowerCase();
+  const groupsMatchMessage = groupsMatch ? 'Yes' : 'No';
+  const isDisabled = foundValues.length >= 1 || (!groupsMatch && groupMetaSetting !== 'Group not set');
+  const status = getStatus(dynamicNavSetting, isDisabled, storedSource);
   const statusWidget = createTag('div', { class: 'dynamic-nav-status' });
 
   statusWidget.innerHTML = `
@@ -94,6 +104,8 @@ const createStatusWidget = (dynamicNavKey) => {
       </div>
       <p class="status">Status: <span>${status}</span></p> 
       <p class="setting">Setting: <span>${dynamicNavSetting}</span></p>
+      <p class="group">Group: <span>${groupMetaSetting}</span></p>
+      <p class="group-match">Group matches stored group: <span>${groupsMatchMessage}</span></p>
       <p class="consumer-key">Consumer key: <span>${dynamicNavKey}</span></p>
       <div class="nav-source-info">
         <p>Authored and stored source match: <span>${authoredSource === currentSource}</span></p>
@@ -121,13 +133,12 @@ const createStatusWidget = (dynamicNavKey) => {
 export default async function main() {
   const { dynamicNavKey } = getConfig();
   const statusWidget = createStatusWidget(dynamicNavKey);
-  const topNav = document.querySelector('.feds-topnav');
-  const fedsWrapper = document.querySelector('.feds-nav-wrapper');
+  const topNav = document.querySelector('.global-navigation');
   const dnsClose = statusWidget.querySelector('.dns-close');
 
   dnsClose.addEventListener('click', () => {
     topNav.removeChild(statusWidget);
   });
 
-  fedsWrapper.after(statusWidget);
+  if (topNav) topNav.appendChild(statusWidget);
 }

@@ -1,4 +1,4 @@
-import { customFetch, getConfig } from '../utils/utils.js';
+import { customFetch, getConfig, getMetadata } from '../utils/utils.js';
 
 const fetchedPlaceholders = {};
 window.mph = {};
@@ -9,22 +9,47 @@ const getPlaceholdersPath = (config, sheet) => {
   return `${path}${query}`;
 };
 
-const fetchPlaceholders = async ({ config, sheet, placeholderRequest, placeholderPath }) => {
-  const path = placeholderPath || getPlaceholdersPath(config, sheet);
-  // eslint-disable-next-line no-async-promise-executor
-  fetchedPlaceholders[path] = fetchedPlaceholders[path] || new Promise(async (resolve) => {
-    const resp = await placeholderRequest || await customFetch(
-      { resource: path, withCacheRules: true },
-    ).catch(() => ({}));
+const parsePlaceholderJson = async (resp, placeholders) => {
+  try {
     const json = resp.ok ? await resp.json() : { data: [] };
-    if (json.data.length === 0) { resolve({}); return; }
-    const placeholders = {};
-    json.data.forEach((item) => {
+    json.data?.forEach((item) => {
       window.mph[item.key] = item.value;
       placeholders[item.key] = item.value;
     });
+  } catch (e) {
+    window.lana.log(`Error parsing placeholder json: ${e.message}`, { tags: 'placeholders', errorType: 'e' });
+  }
+};
+
+const fetchPlaceholder = (path, placeholderRequest) => new Promise(
+  // eslint-disable-next-line no-async-promise-executor
+  async (resolve) => {
+    const resp = await placeholderRequest || await customFetch(
+      { resource: path, withCacheRules: true },
+    ).catch(() => ({}));
+    const placeholders = {};
+
+    if (Array.isArray(resp)) {
+      // Overlay placeholders
+      for (const r of resp) await parsePlaceholderJson(r, placeholders);
+    } else {
+      await parsePlaceholderJson(resp, placeholders);
+    }
+
     resolve(placeholders);
-  });
+  },
+);
+
+const fetchPlaceholders = async ({
+  config,
+  sheet,
+  placeholderRequest,
+  placeholderPath,
+}) => {
+  const path = placeholderPath || getPlaceholdersPath(config, sheet);
+
+  fetchedPlaceholders[path] ||= fetchPlaceholder(path, placeholderRequest);
+
   return fetchedPlaceholders[path];
 };
 
@@ -35,6 +60,7 @@ function keyToStr(key) {
 async function getPlaceholder(key, config, sheet) {
   let defaultFetched = false;
   const defaultLocale = 'en-US';
+  const geoLocDisabled = getMetadata('disable-geo-placeholders') || 'off';
 
   const getDefaultContentRoot = () => {
     const defaultContentRoot = config.locale.contentRoot;
@@ -66,11 +92,13 @@ async function getPlaceholder(key, config, sheet) {
   };
 
   if (config.placeholders?.[key]) return config.placeholders[key];
+  let placeholders;
 
-  const placeholders = await fetchPlaceholders({ config, sheet }).catch(async () => {
-    const defaultPlaceholders = await getDefaultPlaceholders();
-    return defaultPlaceholders;
-  });
+  if (geoLocDisabled === 'on') {
+    placeholders = await getDefaultPlaceholders();
+  } else {
+    placeholders = await fetchPlaceholders({ config, sheet });
+  }
 
   if (typeof placeholders?.[key] === 'string') return placeholders[key];
 

@@ -1,34 +1,87 @@
+/* eslint import/no-relative-packages: 0 */
 /* eslint-disable no-async-promise-executor */
 import {
   getConfig,
   getMetadata,
   loadIms,
+  loadStyle,
+  loadLana,
   decorateLinks,
   loadScript,
+  getGnavSource,
+  getFederatedUrl,
+  getFedsPlaceholderConfig,
 } from '../../utils/utils.js';
-import {
+
+(async () => {
+  const { miloLibs, codeRoot, theme } = getConfig();
+  const url = `${miloLibs || codeRoot}/blocks/global-navigation/`;
+  const loadStylePromise = (u) => new Promise((resolve, reject) => {
+    loadStyle(u, (e) => {
+      if (e === 'error') return reject(u);
+      return resolve();
+    });
+  });
+  try {
+    await loadStylePromise(`${url}base.css`);
+    if (theme === 'dark') await loadStylePromise(`${url}dark-nav.css`);
+  } catch (e) {
+    const gnavSource = getMetadata('gnav-source');
+    if (!window.lana?.log) loadLana();
+    window.lana.log(`GNAV: Error in loadStyles | gnav-source: ${gnavSource} | href: ${window.location.href} | error loading style: ${e}`, {
+      clientId: 'feds-milo',
+      sampleRate: 1,
+      tags: 'utilities',
+      errorType: 'info',
+    });
+  }
+})();
+
+const plainHTMLPromise = (async () => {
+  const source = await getGnavSource();
+  const [url] = source.split('#');
+  let federatedURL = getFederatedUrl(url);
+  const mepGnav = getConfig()?.mep?.inBlock?.['global-navigation'];
+  const mepFragment = mepGnav?.fragments?.[federatedURL];
+  if (mepFragment && mepFragment.action === 'replace') {
+    federatedURL = mepFragment.content;
+  }
+  const res = await fetch(federatedURL.replace(/(\.html$|$)/, '.plain.html'));
+  return res;
+})();
+
+const asideJsPromise = getMetadata('gnav-promo-source') ? import('./features/aside/aside.js') : null;
+
+const breadCrumbsJsPromise = document.querySelector('header')?.classList.contains('has-breadcrumbs') ? import('./features/breadcrumbs/breadcrumbs.js') : null;
+
+const [utilities, placeholders, merch] = await Promise.all([
+  import('./utilities/utilities.js'),
+  import('../../features/placeholders.js'),
+  import('../merch/merch.js'),
+]);
+
+const { replaceKey, replaceKeyArray } = placeholders;
+
+const { getMiloLocaleSettings } = merch;
+
+const {
   closeAllDropdowns,
   decorateCta,
   fetchAndProcessPlainHtml,
   getActiveLink,
   getAnalyticsValue,
   getExperienceName,
-  getFedsPlaceholderConfig,
-  hasActiveLink,
   isActiveLink,
   icons,
   isDesktop,
   isTangentToViewport,
   lanaLog,
-  loadBaseStyles,
-  loadBlock,
   loadDecorateMenu,
   rootPath,
   loadStyles,
   logErrorFor,
   selectors,
   setActiveDropdown,
-  setActiveLink,
   setCurtainState,
   setUserProfile,
   toFragment,
@@ -38,10 +91,15 @@ import {
   isDarkMode,
   darkIcons,
   setDisableAEDState,
-  getDisableAEDState,
-} from './utilities/utilities.js';
-
-import { replaceKey, replaceKeyArray } from '../../features/placeholders.js';
+  animateInSequence,
+  transformTemplateToMobile,
+  closeAllTabs,
+  disableMobileScroll,
+  enableMobileScroll,
+  setAsyncDropdownCount,
+  branchBannerLoadCheck,
+  getBranchBannerInfo,
+} = utilities;
 
 const SIGNIN_CONTEXT = getConfig()?.signInContext;
 
@@ -52,6 +110,33 @@ function getHelpChildren() {
     { type: 'Community' },
   ];
 }
+
+const getMessageEventListener = () => {
+  const configListener = getConfig().unav?.profile?.messageEventListener;
+  if (configListener) return configListener;
+
+  return (event) => {
+    const { name, payload, executeDefaultAction } = event.detail;
+    if (!name || name !== 'System' || !payload || typeof executeDefaultAction !== 'function') return;
+    switch (payload.subType) {
+      case 'AppInitiated':
+        window.adobeProfile?.getUserProfile()
+          .then((data) => { setUserProfile(data); })
+          .catch(() => { setUserProfile({}); });
+        break;
+      case 'SignOut':
+        executeDefaultAction();
+        break;
+      case 'ProfileSwitch':
+        Promise.resolve(executeDefaultAction()).then((profile) => {
+          if (profile) window.location.reload();
+        });
+        break;
+      default:
+        break;
+    }
+  };
+};
 
 export const CONFIG = {
   icons: isDarkMode() ? darkIcons : icons,
@@ -74,28 +159,24 @@ export const CONFIG = {
         name: 'profile',
         attributes: {
           isSignUpRequired: false,
+          messageEventListener: getMessageEventListener(),
           componentLoaderConfig: {
             config: {
               enableLocalSection: true,
+              enableProfileSwitcher: true,
               miniAppContext: {
-                onMessage: (name, payload) => {
-                  if (name === 'System' && payload.subType === 'AppInitiated') {
-                    window.adobeProfile?.getUserProfile()
-                      .then((data) => { setUserProfile(data); })
-                      .catch(() => { setUserProfile({}); });
-                  }
-                },
                 logger: {
                   trace: () => {},
                   debug: () => {},
                   info: () => {},
-                  warn: (e) => lanaLog({ message: 'Profile Menu warning', e, tags: 'errorType=warn,module=universalnav' }),
-                  error: (e) => lanaLog({ message: 'Profile Menu error', e, tags: 'errorType=error,module=universalnav' }),
+                  warn: (e) => lanaLog({ message: 'Profile Menu warning', e, tags: 'universalnav,warn' }),
+                  error: (e) => lanaLog({ message: 'Profile Menu error', e, tags: 'universalnav', errorType: 'e' }),
                 },
               },
               ...getConfig().unav?.profile?.config,
             },
           },
+          complexConfig: getConfig().unav?.profile?.complexConfig || null,
           callbacks: {
             onSignIn: () => { window.adobeIMS?.signIn(SIGNIN_CONTEXT); },
             onSignUp: () => { window.adobeIMS?.signIn(SIGNIN_CONTEXT); },
@@ -105,7 +186,14 @@ export const CONFIG = {
       appswitcher: { name: 'app-switcher' },
       notifications: {
         name: 'notifications',
-        attributes: { notificationsConfig: { applicationContext: { appID: getConfig().unav?.uncAppId || 'adobecom' } } },
+        attributes: {
+          notificationsConfig: {
+            applicationContext: {
+              appID: getConfig().unav?.uncAppId || 'adobecom',
+              ...getConfig().unav?.uncConfig,
+            },
+          },
+        },
       },
       help: {
         name: 'help',
@@ -118,6 +206,7 @@ export const CONFIG = {
           callbacks: getConfig().jarvis?.callbacks,
         },
       },
+      cart: { name: 'cart' },
     },
   },
 };
@@ -152,7 +241,7 @@ export const LANGMAP = {
 // signIn, decorateSignIn and decorateProfileTrigger can be removed if IMS takes over the profile
 const signIn = (options = {}) => {
   if (typeof window.adobeIMS?.signIn !== 'function') {
-    lanaLog({ message: 'IMS signIn method not available', tags: 'errorType=warn,module=gnav' });
+    lanaLog({ message: 'IMS signIn method not available', tags: 'gnav,warn' });
     return;
   }
   window.adobeIMS.signIn(options);
@@ -188,7 +277,7 @@ const decorateSignIn = async ({ rawElem, decoratedElem }) => {
         signIn(SIGNIN_CONTEXT);
       });
     } else {
-      lanaLog({ message: 'Sign in link not found in dropdown.', tags: 'errorType=warn,module=gnav' });
+      lanaLog({ message: 'Sign in link not found in dropdown.', tags: 'gnav,warn' });
     }
 
     decoratedElem.append(dropdownElem);
@@ -205,6 +294,7 @@ const decorateProfileTrigger = async ({ avatar }) => {
 
   const buttonElem = toFragment`
     <button
+      data-cs-mask
       class="feds-profile-button"
       aria-expanded="false"
       aria-controls="feds-profile-menu"
@@ -212,7 +302,7 @@ const decorateProfileTrigger = async ({ avatar }) => {
       daa-ll="Account"
       aria-haspopup="true"
     >
-      <img class="feds-profile-img" src="${avatar}" alt="${profileAvatar}"></img>
+      <img data-cs-mask class="feds-profile-img" src="${avatar}" alt="${profileAvatar}"></img>
     </button>
   `;
 
@@ -220,10 +310,10 @@ const decorateProfileTrigger = async ({ avatar }) => {
 };
 
 let keyboardNav;
-const setupKeyboardNav = async () => {
+const setupKeyboardNav = async (newMobileWithLnav) => {
   keyboardNav = keyboardNav || new Promise(async (resolve) => {
-    const KeyboardNavigation = await loadBlock('./keyboard/index.js');
-    const instance = new KeyboardNavigation();
+    const { default: KeyboardNavigation } = await import('./utilities/keyboard/index.js');
+    const instance = new KeyboardNavigation(newMobileWithLnav);
     resolve(instance);
   });
 };
@@ -245,15 +335,19 @@ const getBrandImage = (image, brandImageOnly) => {
   return brandImageOnly ? CONFIG.icons.brand : CONFIG.icons.company;
 };
 
-const closeOnClickOutside = (e) => {
-  if (!isDesktop.matches) return;
+const closeOnClickOutside = (e, isLocalNav, navWrapper) => {
+  if (isLocalNav && navWrapper.classList.contains('feds-nav-wrapper--expanded')) return;
+  const newMobileNav = getMetadata('mobile-gnav-v2') !== 'false';
+  if (!isDesktop.matches && !newMobileNav) return;
 
-  const openElemSelector = `${selectors.globalNav} [aria-expanded = "true"]`;
+  const openElemSelector = `${selectors.globalNav} [aria-expanded = "true"]:not(.universal-nav-container *), ${selectors.localNav} [aria-expanded = "true"]`;
   const isClickedElemOpen = [...document.querySelectorAll(openElemSelector)]
     .find((openItem) => openItem.parentElement.contains(e.target));
 
   if (!isClickedElemOpen) {
-    closeAllDropdowns();
+    const animatedElement = isLocalNav ? document.querySelector('header.new-nav + .feds-localnav .feds-localnav-items') : undefined;
+    const animationType = isLocalNav ? 'transition' : undefined;
+    closeAllDropdowns({ animatedElement, animationType });
   }
 };
 
@@ -277,8 +371,13 @@ const convertToPascalCase = (str) => str
   .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
   .join(' ');
 
+const removeLocalNav = () => {
+  lanaLog({ message: 'Gnav Localnav was removed, potential CLS', tags: 'gnav-localnav', errorType: 'i' });
+  document.querySelector('.feds-localnav')?.remove();
+};
+
 class Gnav {
-  constructor({ content, block } = {}) {
+  constructor({ content, block, newMobileNav } = {}) {
     this.content = content;
     this.block = block;
     this.customLinks = getConfig()?.customLinks?.split(',') || [];
@@ -286,7 +385,7 @@ class Gnav {
     this.blocks = {
       profile: {
         rawElem: this.content.querySelector('.profile'),
-        decoratedElem: toFragment`<div class="feds-profile"></div>`,
+        decoratedElem: toFragment`<div data-cs-mask class="feds-profile"></div>`,
       },
       search: { config: { icon: CONFIG.icons.search } },
       breadcrumbs: { wrapper: '' },
@@ -294,7 +393,11 @@ class Gnav {
 
     this.setupUniversalNav();
     this.elements = {};
+    this.newMobileNav = newMobileNav;
   }
+
+  // eslint-disable-next-line no-return-assign
+  getOriginalTitle = (firstElem) => this.originalTitle ||= firstElem.textContent?.split('::');
 
   setupUniversalNav = () => {
     const meta = getMetadata('universal-nav')?.toLowerCase();
@@ -311,31 +414,41 @@ class Gnav {
   };
 
   init = () => logErrorFor(async () => {
+    branchBannerLoadCheck(this.updatePopupPosition);
     this.elements.curtain = toFragment`<div class="feds-curtain"></div>`;
 
     // Order is important, decorateTopnavWrapper will render the nav
     // Ensure any critical task is executed before it
     const tasks = [
+      // decorateAside is the only async function that fires prior to rendering
+      // (at time of writing). If there is no aside it returns sync -- no problem.
+      // But if there is, we need those functions (import + decorate) to enter the event loop
+      // before the delayed decorateDropdown function does.
+      // the rest is taken care of by the 'await' semantics
+      // We needn't worry about delays now since decorateAside
+      // needed to run anyway prior to decorateTopNavWrapper
+      this.decorateAside,
       this.decorateMainNav,
       this.decorateTopNav,
-      this.decorateAside,
       this.decorateTopnavWrapper,
-      loadBaseStyles,
       this.ims,
       this.addChangeEventListeners,
     ];
+    const fetchKeyboardNav = () => {
+      setupKeyboardNav(this.isLocalNav());
+    };
     this.block.addEventListener('click', this.loadDelayed);
-    this.block.addEventListener('keydown', setupKeyboardNav);
+    this.block.addEventListener('keydown', fetchKeyboardNav);
     setTimeout(this.loadDelayed, CONFIG.delays.loadDelayed);
-    setTimeout(setupKeyboardNav, CONFIG.delays.keyboardNav);
-    for await (const task of tasks) {
+    setTimeout(fetchKeyboardNav, CONFIG.delays.keyboardNav);
+    for (const task of tasks) {
       await yieldToMain();
       await task();
     }
 
-    document.addEventListener('click', closeOnClickOutside);
+    document.addEventListener('click', (e) => closeOnClickOutside(e, this.isLocalNav(), this.elements.navWrapper));
     isDesktop.addEventListener('change', closeAllDropdowns);
-  }, 'Error in global navigation init', 'errorType=error,module=gnav');
+  }, 'Error in global navigation init', 'gnav', 'e');
 
   ims = async () => (window.adobeIMS?.initialized ? this.imsReady() : loadIms()
     .then(() => this.imsReady())
@@ -344,8 +457,16 @@ class Gnav {
         window.addEventListener('onImsLibInstance', () => this.imsReady());
         return;
       }
-      lanaLog({ message: 'GNAV: Error with IMS', e, tags: 'errorType=info,module=gnav' });
+      lanaLog({ message: 'GNAV: Error with IMS', e, tags: 'gnav', errorType: 'i' });
     }));
+
+  decorateProductEntryCTA = () => {
+    const button = this.content.querySelector('.product-entry-cta a');
+    if (!button) return null;
+    const cta = decorateCta({ elem: button, type: this.getMainNavItemType(button) });
+    cta.closest('.feds-cta-wrapper').classList.add('feds-product-entry-cta');
+    return cta;
+  };
 
   decorateTopNav = () => {
     this.elements.mobileToggle = this.decorateToggle();
@@ -356,12 +477,105 @@ class Gnav {
           ${this.decorateBrand()}
         </div>
         ${this.elements.navWrapper}
+        ${getMetadata('product-entry-cta')?.toLowerCase() === 'on' ? this.decorateProductEntryCTA() : ''}
         ${getConfig().searchEnabled === 'on' ? toFragment`<div class="feds-client-search"></div>` : ''}
         ${this.useUniversalNav ? this.blocks.universalNav : ''}
+        ${getConfig().selfIntegrateUnav ? toFragment`<div class="feds-client-unav"></div>` : ''}
         ${(!this.useUniversalNav && this.blocks.profile.rawElem) ? this.blocks.profile.decoratedElem : ''}
         ${this.decorateLogo()}
       </nav>
     `;
+  };
+
+  decorateLocalNav = async () => {
+    if (!this.isLocalNav()) {
+      removeLocalNav();
+      return;
+    }
+    const localNavItems = this.elements.navWrapper.querySelector('.feds-nav').querySelectorAll('.feds-navItem:not(.feds-navItem--section, .feds-navItem--mobile-only)');
+    const firstElem = localNavItems[0]?.querySelector('a') || localNavItems[0]?.querySelector('button');
+    if (!firstElem) {
+      lanaLog({ message: 'GNAV: Incorrect authoring of localnav found.', tags: 'gnav', errorType: 'i' });
+      return;
+    }
+    const [title, navTitle = ''] = this.getOriginalTitle(firstElem);
+    let localNav = document.querySelector('.feds-localnav');
+    if (!localNav) {
+      lanaLog({
+        message: 'GNAV: Localnav does not include \'localnav\' in its name.',
+        tags: 'gnav',
+        errorType: 'i',
+      });
+      localNav = toFragment`<div class="feds-localnav"/>`;
+      this.block.after(localNav);
+    }
+    localNav.setAttribute('daa-lh', `${title}_localNav`);
+    localNav.append(toFragment`<button class="feds-navLink--hoverCaret feds-localnav-title" aria-haspopup="true" aria-expanded="false" daa-ll="${title}_localNav|open"></button>`, toFragment` <div class="feds-localnav-curtain"></div>`, toFragment` <div class="feds-localnav-items"></div>`, toFragment`<a href="#" class="feds-sr-only feds-localnav-exit">.</a>`);
+
+    const itemWrapper = localNav.querySelector('.feds-localnav-items');
+    const titleLabel = await replaceKey('overview', getFedsPlaceholderConfig());
+
+    localNavItems.forEach((elem, idx) => {
+      const clonedItem = elem.cloneNode(true);
+      const link = clonedItem.querySelector('a, button');
+
+      if (link) {
+        link.dataset.title = link.textContent;
+      }
+
+      if (idx === 0) {
+        localNav.querySelector('.feds-localnav-title').innerText = title.trim();
+        link.textContent = navTitle.trim() || titleLabel;
+      }
+
+      itemWrapper.appendChild(clonedItem);
+    });
+
+    localNav.querySelector('.feds-localnav-title').addEventListener('click', () => {
+      localNav.classList.toggle('feds-localnav--active');
+      const isActive = localNav.classList.contains('feds-localnav--active');
+      localNav.querySelector('.feds-localnav-title').setAttribute('aria-expanded', isActive);
+      localNav.querySelector('.feds-localnav-title').setAttribute('daa-ll', `${title}_localNav|${isActive ? 'close' : 'open'}`);
+    });
+
+    const curtain = localNav.querySelector('.feds-localnav-curtain');
+    curtain.addEventListener('click', (e) => {
+      trigger({
+        element: e.currentTarget,
+        event: e,
+        type: 'localNav-curtain',
+        animatedElement: itemWrapper,
+        animationType: 'transition',
+      });
+    });
+    const promo = document.querySelector('.feds-promo-aside-wrapper');
+    if (promo) localNav.classList.add('has-promo');
+    this.elements.localNav = localNav;
+    firstElem.textContent = title.trim();
+    const isAtTop = () => {
+      const rect = this.elements.localNav.getBoundingClientRect();
+      // note: ios safari changes between -0.34375, 0, and 0.328125
+      return rect.top === 0;
+    };
+    window.addEventListener('scroll', (e) => {
+      const classList = this.elements.localNav?.classList;
+      if (classList.contains('feds-localnav--active')) {
+        trigger({
+          element: curtain,
+          event: e,
+          type: 'localNav-curtain',
+          animatedElement: itemWrapper,
+          animationType: 'transition',
+        });
+      }
+      if (isAtTop()) {
+        if (!classList?.contains('is-sticky')) {
+          classList?.add('is-sticky');
+        }
+      } else {
+        classList?.remove('is-sticky');
+      }
+    });
   };
 
   decorateTopnavWrapper = async () => {
@@ -369,9 +583,13 @@ class Gnav {
     this.elements.topnavWrapper = toFragment`<div class="feds-topnav-wrapper">
         ${this.elements.topnav}
         ${breadcrumbs}
-      </div>`;
+      </div>
+      `;
 
-    this.block.append(this.elements.curtain, this.elements.aside, this.elements.topnavWrapper);
+    this.block.append(
+      this.elements.curtain,
+      this.elements.topnavWrapper,
+    );
   };
 
   addChangeEventListeners = () => {
@@ -425,17 +643,17 @@ class Gnav {
         this.block.removeEventListener('keydown', this.loadDelayed);
         if (this.searchPresent()) {
           const [
-            Search,
+            { default: Search },
           ] = await Promise.all([
-            loadBlock('../features/search/gnav-search.js'),
+            import('./features/search/gnav-search.js'),
             loadStyles(rootPath('features/search/gnav-search.css')),
           ]);
           this.Search = Search;
         }
 
         if (!this.useUniversalNav) {
-          const [ProfileDropdown] = await Promise.all([
-            loadBlock('../features/profile/dropdown.js'),
+          const [{ default: ProfileDropdown }] = await Promise.all([
+            import('./features/profile/dropdown.js'),
             loadStyles(rootPath('features/profile/dropdown.css')),
           ]);
           this.ProfileDropdown = ProfileDropdown;
@@ -443,7 +661,7 @@ class Gnav {
 
         resolve();
       } catch (e) {
-        lanaLog({ message: 'GNAV: Error within loadDelayed', e, tags: 'errorType=warn,module=gnav' });
+        lanaLog({ message: 'GNAV: Error within loadDelayed', e, tags: 'gnav,warn' });
         resolve();
       }
     });
@@ -462,7 +680,12 @@ class Gnav {
         await task();
       }
     } catch (e) {
-      lanaLog({ message: 'GNAV: issues within onReady', e, tags: 'errorType=info,module=gnav' });
+      lanaLog({
+        e,
+        tags: 'gnav',
+        errorType: 'i',
+        message: `GNAV: issues within imsReady - ${this.useUniversalNav ? 'decorateUniversalNav' : 'decorateProfile'}`,
+      });
     }
   };
 
@@ -488,7 +711,8 @@ class Gnav {
       lanaLog({
         message: 'GNAV: decorateProfile has failed to fetch profile data',
         e: `${profileData.statusText} url: ${profileData.url}`,
-        tags: 'errorType=info,module=gnav',
+        tags: 'gnav',
+        errorType: 'i',
       });
       return;
     }
@@ -537,10 +761,10 @@ class Gnav {
       return 'linux';
     };
 
-    const unavVersion = new URLSearchParams(window.location.search).get('unavVersion') || '1.3';
+    const unavVersion = new URLSearchParams(window.location.search).get('unavVersion') || '1.4';
     await Promise.all([
       loadScript(`https://${environment}.adobeccstatic.com/unav/${unavVersion}/UniversalNav.js`),
-      loadStyles(`https://${environment}.adobeccstatic.com/unav/${unavVersion}/UniversalNav.css`),
+      loadStyles(`https://${environment}.adobeccstatic.com/unav/${unavVersion}/UniversalNav.css`, true),
     ]);
 
     const getChildren = () => {
@@ -622,6 +846,7 @@ class Gnav {
       target: this.blocks.universalNav,
       env: environment,
       locale,
+      countryCode: getMiloLocaleSettings(getConfig().locale)?.country || 'US',
       imsClientId: window.adobeid?.client_id,
       theme: isDarkMode() ? 'dark' : 'light',
       analyticsContext: {
@@ -637,6 +862,7 @@ class Gnav {
       },
       children: getChildren(),
       isSectionDividerRequired: getConfig()?.unav?.showSectionDivider,
+      showTrayExperience: (!isDesktop.matches),
     });
 
     // Exposing UNAV config for consumers
@@ -644,7 +870,7 @@ class Gnav {
     await window.UniversalNav(CONFIG.universalNav.universalNavConfig);
     this.decorateAppPrompt({ getAnchorState: () => window.UniversalNav.getComponent?.('app-switcher') });
     isDesktop.addEventListener('change', () => {
-      window.UniversalNav.reload(CONFIG.universalNav.universalNavConfig);
+      window.UniversalNav.reload(getConfiguration());
     });
   };
 
@@ -679,14 +905,37 @@ class Gnav {
 
     return this.loadDelayed().then(() => {
       this.blocks.search.instance = new this.Search(this.blocks.search.config);
-    }).catch(() => {});
+    }).catch(() => { });
   };
 
   isToggleExpanded = () => this.elements.mobileToggle?.getAttribute('aria-expanded') === 'true';
 
+  isLocalNav = () => this.newMobileNav && this
+    .elements
+    .navWrapper
+    ?.querySelectorAll('.feds-nav > section.feds-navItem')
+    ?.length <= 1;
+
+  hasMegaMenu = () => this
+    .elements
+    .navWrapper
+    ?.querySelectorAll('.feds-nav > section.feds-navItem')
+    ?.length >= 1;
+
   toggleMenuMobile = () => {
     const toggle = this.elements.mobileToggle;
     const isExpanded = this.isToggleExpanded();
+    if (!isExpanded && this.newMobileNav) {
+      const sections = document.querySelectorAll('header.new-nav .feds-nav > section.feds-navItem > button.feds-navLink');
+      animateInSequence(sections, 0.075);
+      if (this.isLocalNav() && this.hasMegaMenu()) {
+        disableMobileScroll();
+        const section = sections[0];
+        queueMicrotask(() => section.click());
+      }
+    } else if (isExpanded && this.isLocalNav()) {
+      enableMobileScroll();
+    }
     toggle?.setAttribute('aria-expanded', !isExpanded);
     document.body.classList.toggle('disable-scroll', !isExpanded);
     this.elements.navWrapper?.classList?.toggle('feds-nav-wrapper--expanded', !isExpanded);
@@ -696,7 +945,7 @@ class Gnav {
   };
 
   decorateToggle = () => {
-    if (!this.mainNavItemCount) return '';
+    if (!this.mainNavItemCount || (this.newMobileNav && !this.hasMegaMenu())) return '';
 
     const toggle = toFragment`<button
       class="feds-toggle"
@@ -729,7 +978,7 @@ class Gnav {
       if (this.isToggleExpanded()) setHamburgerPadding();
     };
 
-    toggle.addEventListener('click', () => logErrorFor(onToggleClick, 'Toggle click failed', 'errorType=error,module=gnav'));
+    toggle.addEventListener('click', () => logErrorFor(onToggleClick, 'Toggle click failed', 'gnav', 'e'));
 
     const onDeviceChange = () => {
       if (isDesktop.matches) {
@@ -742,7 +991,7 @@ class Gnav {
       }
     };
 
-    isDesktop.addEventListener('change', () => logErrorFor(onDeviceChange, 'Toggle logic failed on device change', 'errorType=error,module=gnav'));
+    isDesktop.addEventListener('change', () => logErrorFor(onDeviceChange, 'Toggle logic failed on device change', 'gnav', 'e'));
 
     return toggle;
   };
@@ -773,7 +1022,7 @@ class Gnav {
         if (allSvgImgs.length === 2) return allSvgImgs[1];
 
         const images = blockLinks.filter((blockLink) => imgRegex.test(blockLink.href)
-        || imgRegex.test(blockLink.textContent));
+          || imgRegex.test(blockLink.textContent));
         if (images.length === 2) return getBrandImage(images[1], isBrandImage);
       }
       const svgImg = rawBlock.querySelector('picture img[src$=".svg"]');
@@ -810,14 +1059,42 @@ class Gnav {
   decorateAside = async () => {
     this.elements.aside = '';
     const promoPath = getMetadata('gnav-promo-source');
-    if (!promoPath) {
+    const fedsPromoWrapper = document.querySelector('.feds-promo-aside-wrapper');
+
+    if (!promoPath || !asideJsPromise) {
+      fedsPromoWrapper?.remove();
       this.block.classList.remove('has-promo');
       return this.elements.aside;
     }
 
-    const { default: decorate } = await import('./features/aside/aside.js');
+    const { default: decorate } = await asideJsPromise;
     if (!decorate) return this.elements.aside;
-    this.elements.aside = await decorate({ headerElem: this.block, promoPath });
+    this.elements.aside = await decorate({ headerElem: this.block, fedsPromoWrapper, promoPath });
+    fedsPromoWrapper.append(this.elements.aside);
+
+    const updateLayout = () => {
+      const promoHeight = `${this.elements.aside.clientHeight}px`;
+      const header = document.querySelector('header');
+      const localNav = document.querySelector('.feds-localnav');
+
+      fedsPromoWrapper.style.height = promoHeight;
+      header.style.top = promoHeight;
+
+      if (!isDesktop.matches && localNav) {
+        header.style.top = 0;
+        localNav.style.top = promoHeight;
+      }
+    };
+
+    if (this.elements.aside.clientHeight > fedsPromoWrapper.clientHeight) {
+      lanaLog({ message: 'Promo height is more than expected, potential CLS', tags: 'gnav-promo', errorType: 'i' });
+      updateLayout();
+
+      this.promoResizeObserver?.disconnect();
+      this.promoResizeObserver = new ResizeObserver(updateLayout);
+      this.promoResizeObserver.observe(this.elements.aside);
+    }
+
     return this.elements.aside;
   };
 
@@ -836,7 +1113,7 @@ class Gnav {
 
   decorateMainNav = async () => {
     const breadcrumbs = isDesktop.matches ? '' : await this.decorateBreadcrumbs();
-    this.elements.mainNav = toFragment`<div class="feds-nav"></div>`;
+    this.elements.mainNav = toFragment`<div class="feds-nav" role="list"></div>`;
     this.elements.navWrapper = toFragment`
       <div class="feds-nav-wrapper" id="feds-nav-wrapper">
         ${breadcrumbs}
@@ -860,17 +1137,9 @@ class Gnav {
         this.elements.mainNav.appendChild(mainNavItem);
       }
     }
-
-    if (!hasActiveLink()) {
-      const sections = this.elements.mainNav.querySelectorAll('.feds-navItem--section');
-      const disableAED = getDisableAEDState();
-
-      if (!disableAED && sections.length === 1) {
-        sections[0].classList.add(selectors.activeNavItem.slice(1));
-        setActiveLink(true);
-      }
+    if (this.newMobileNav) {
+      await this.decorateLocalNav();
     }
-
     return this.elements.mainNav;
   };
 
@@ -893,12 +1162,106 @@ class Gnav {
     return 'link';
   };
 
+  // update GNAV popup position based on branch banner
+  updatePopupPosition = (activePopup) => {
+    const popup = activePopup || this.elements.mainNav?.querySelector('.feds-navItem--section.feds-dropdown--active .feds-popup');
+    if (!popup) return;
+    const hasPromo = this.block.classList.contains('has-promo');
+    const promoHeight = this.elements.aside?.clientHeight;
+
+    if (!this.isLocalNav()) {
+      if (hasPromo) popup.style.top = `calc(0px - var(--feds-height-nav) - ${promoHeight}px)`;
+      return;
+    }
+    const yOffset = window.scrollY || Math.abs(parseInt(document.body.style.top, 10)) || 0;
+    const navOffset = hasPromo ? `var(--feds-height-nav) - ${promoHeight}px` : 'var(--feds-height-nav)';
+    popup.removeAttribute('style');
+    popup.style.top = `calc(${yOffset}px - ${navOffset} - 2px)`;
+    const { isPresent, isSticky, height } = getBranchBannerInfo();
+    if (isPresent) {
+      const delta = yOffset - height;
+      if (isSticky) {
+        popup.style.height = `calc(100dvh - ${height}px + 2px)`;
+      } else {
+        popup.style.top = `calc(0px - var(--feds-height-nav) + ${Math.max(delta, 0)}px - 2px)`;
+        popup.style.height = `calc(100dvh + ${Math.min(delta, 0)}px + 2px)`;
+      }
+    }
+  };
+
   decorateMainNavItem = (item, index) => {
     const itemType = this.getMainNavItemType(item);
 
     const itemHasActiveLink = ['syncDropdownTrigger', 'link'].includes(itemType)
       && getActiveLink(item.closest('div')) instanceof HTMLElement;
     const activeModifier = itemHasActiveLink ? ` ${selectors.activeNavItem.slice(1)}` : '';
+
+    const makeTabActive = (popup) => {
+      const tabbuttons = popup.querySelectorAll('.global-navigation .tabs button');
+      const tabpanels = popup.querySelectorAll('.global-navigation .tab-content [role="tabpanel"]');
+      closeAllTabs(tabbuttons, tabpanels);
+      const { origin, pathname } = window.location;
+      const url = `${origin}${pathname}`;
+      setTimeout(() => {
+        const activeLink = [
+          ...popup.querySelectorAll('a:not([data-modal-hash])'),
+        ].find((el) => (el.href === url || el.href.startsWith(`${url}?`) || el.href.startsWith(`${url}#`)));
+        const tabIndex = activeLink ? +activeLink.parentNode.id : 0;
+        const selectTab = popup.querySelectorAll('.tab')[tabIndex];
+        const daallTab = selectTab.getAttribute('daa-ll');
+        selectTab.setAttribute('daa-ll', `${daallTab.replace('click', 'open')}`);
+        selectTab?.click();
+        selectTab.setAttribute('daa-ll', `${daallTab.replace('open', 'click')}`);
+        selectTab?.focus();
+      }, 100);
+    };
+
+    function observeDropdown(dropdownTrigger) {
+      const observer = new MutationObserver(() => {
+        const isExpanded = dropdownTrigger.getAttribute('aria-expanded') === 'true';
+        const analyticsValue = `header|${isExpanded ? 'Close' : 'Open'}`;
+        dropdownTrigger.setAttribute('daa-lh', analyticsValue);
+      });
+      observer.observe(dropdownTrigger, { attributeFilter: ['aria-expanded'] });
+    }
+
+    // Copying dropdown contents to localNav items
+    const decorateLocalNavItems = (navItem, template) => {
+      const elements = [...document.querySelectorAll('.feds-localnav .feds-navItem')].find(
+        (el) => {
+          const link = el.querySelector('a, button');
+          return link.dataset.title?.trim() === navItem.textContent;
+        },
+      );
+      if (elements) {
+        const dropdownBtn = elements.querySelector('button');
+        elements.innerHTML = template.innerHTML;
+        // To override the textcontent of button of first item of localnav
+        if (dropdownBtn) {
+          elements.querySelector('button').textContent = dropdownBtn.textContent;
+        }
+        // Reattach click events & mutation observers, as cloned elem don't retain event listeners
+        elements.querySelector('.feds-localnav-items button')?.addEventListener('click', (e) => {
+          trigger({ element: e.currentTarget, event: e, type: 'localNavItem' });
+        });
+
+        const dropdownTrigger = elements.querySelector('.feds-localnav-items button[aria-expanded]');
+        if (dropdownTrigger) observeDropdown(dropdownTrigger);
+
+        elements.querySelectorAll('.feds-menu-headline').forEach((elem) => {
+          // Reattach click event listener to headlines
+          elem?.setAttribute('role', 'button');
+          elem?.setAttribute('tabindex', 0);
+          elem?.removeAttribute('aria-level');
+          elem?.setAttribute('aria-haspopup', true);
+          elem?.setAttribute('aria-expanded', false);
+          elem?.addEventListener('click', (e) => {
+            trigger({ element: e.currentTarget, event: e, type: 'headline' });
+          });
+          elem.textContent = elem.textContent?.trim();
+        });
+      }
+    };
 
     // All dropdown decoration is delayed
     const delayDropdownDecoration = ({ template } = {}) => {
@@ -910,12 +1273,36 @@ class Gnav {
 
         const menuLogic = await loadDecorateMenu();
 
-        menuLogic.decorateMenu({
+        await menuLogic.decorateMenu({
           item,
           template,
           type: itemType,
         });
-      }, 'Decorate dropdown failed', 'errorType=info,module=gnav');
+
+        if (this.newMobileNav) {
+          const popup = template.querySelector('.feds-popup');
+          let originalContent = popup.innerHTML;
+
+          if (!isDesktop.matches && popup) {
+            originalContent = await transformTemplateToMobile(popup, item, this.isLocalNav());
+            popup.querySelector('.close-icon')?.addEventListener('click', this.toggleMenuMobile);
+          }
+          isDesktop.addEventListener('change', async () => {
+            enableMobileScroll();
+            if (isDesktop.matches) {
+              popup.innerHTML = originalContent;
+              this.block.classList.remove('new-nav');
+            } else {
+              originalContent = await transformTemplateToMobile(popup, item, this.isLocalNav());
+              popup.querySelector('.close-icon')?.addEventListener('click', this.toggleMenuMobile);
+              this.block.classList.add('new-nav');
+            }
+          });
+          if (this.isLocalNav()) {
+            decorateLocalNavItems(item, template);
+          }
+        }
+      }, 'Decorate dropdown failed', 'gnav', 'i');
 
       template.addEventListener('click', decorateDropdown);
       decorationTimeout = setTimeout(decorateDropdown, CONFIG.delays.mainNavDropdowns);
@@ -937,24 +1324,32 @@ class Gnav {
         const isSectionMenu = item.closest('.section') instanceof HTMLElement;
         const tag = isSectionMenu ? 'section' : 'div';
         const sectionModifier = isSectionMenu ? ' feds-navItem--section' : '';
+        const sectionDaaLh = isSectionMenu ? ` daa-lh='${getAnalyticsValue(item.textContent)}'` : '';
         const triggerTemplate = toFragment`
-          <${tag} class="feds-navItem${sectionModifier}${activeModifier}">
+          <${tag} role="listitem" class="feds-navItem${sectionModifier}${activeModifier}" ${sectionDaaLh}>
             ${dropdownTrigger}
           </${tag}>`;
 
         // Toggle trigger's dropdown on click
         dropdownTrigger.addEventListener('click', (e) => {
-          trigger({ element: dropdownTrigger, event: e });
+          if (!isDesktop.matches && this.newMobileNav && isSectionMenu) {
+            const popup = dropdownTrigger.nextElementSibling;
+            // document.body.style.top should always be set
+            // at this point by calling disableMobileScroll
+            if (popup) {
+              this.updatePopupPosition(popup);
+            }
+            makeTabActive(popup);
+          } else if (isDesktop.matches && this.newMobileNav && isSectionMenu) {
+            const popup = dropdownTrigger.nextElementSibling;
+            if (popup) popup.style.removeProperty('top');
+          }
+          trigger({ element: dropdownTrigger, event: e, type: 'dropdown' });
           setActiveDropdown(dropdownTrigger);
         });
 
         // Update analytics value when dropdown is expanded/collapsed
-        const observer = new MutationObserver(() => {
-          const isExpanded = dropdownTrigger.getAttribute('aria-expanded') === 'true';
-          const analyticsValue = `header|${isExpanded ? 'Close' : 'Open'}`;
-          dropdownTrigger.setAttribute('daa-lh', analyticsValue);
-        });
-        observer.observe(dropdownTrigger, { attributeFilter: ['aria-expanded'] });
+        observeDropdown(dropdownTrigger);
 
         delayDropdownDecoration({ template: triggerTemplate });
         return addMepHighlightAndTargetId(triggerTemplate, item);
@@ -964,7 +1359,7 @@ class Gnav {
         // Remove its 'em' or 'strong' wrapper
         item.parentElement.replaceWith(item);
 
-        return addMepHighlightAndTargetId(toFragment`<div class="feds-navItem feds-navItem--centered">
+        return addMepHighlightAndTargetId(toFragment`<div class="feds-navItem feds-navItem--centered" role="listitem">
             ${decorateCta({ elem: item, type: itemType, index: index + 1 })}
           </div>`, item);
       case 'link': {
@@ -998,7 +1393,7 @@ class Gnav {
         }
 
         const linkTemplate = toFragment`
-          <div class="feds-navItem${activeModifier}${customLinkModifier}">
+          <div class="feds-navItem${activeModifier}${customLinkModifier}" role="listitem">
             ${linkElem}
           </div>`;
         return removeCustomLink ? '' : addMepHighlightAndTargetId(linkTemplate, item);
@@ -1021,7 +1416,8 @@ class Gnav {
     const breadcrumbsElem = this.block.querySelector('.breadcrumbs');
     // Breadcrumbs are not initially part of the nav, need to decorate the links
     if (breadcrumbsElem) decorateLinks(breadcrumbsElem);
-    const createBreadcrumbs = await loadBlock('../features/breadcrumbs/breadcrumbs.js');
+    if (!breadCrumbsJsPromise) return null;
+    const { default: createBreadcrumbs } = await breadCrumbsJsPromise;
     this.elements.breadcrumbsWrapper = await createBreadcrumbs(breadcrumbsElem);
     return this.elements.breadcrumbsWrapper;
   };
@@ -1057,39 +1453,37 @@ class Gnav {
   };
 }
 
-const getSource = async () => {
-  const { locale, dynamicNavKey } = getConfig();
-  let url = getMetadata('gnav-source') || `${locale.contentRoot}/gnav`;
-  if (dynamicNavKey) {
-    const { default: dynamicNav } = await import('../../features/dynamic-navigation/dynamic-navigation.js');
-    url = dynamicNav(url, dynamicNavKey);
-  }
-  return url;
-};
-
 export default async function init(block) {
   const { mep } = getConfig();
-  const sourceUrl = await getSource();
+  const sourceUrl = await getGnavSource();
+  let newMobileNav = new URLSearchParams(window.location.search).get('newNav');
+  newMobileNav = newMobileNav ? newMobileNav !== 'false' : getMetadata('mobile-gnav-v2') !== 'off';
   const [url, hash = ''] = sourceUrl.split('#');
   if (hash === '_noActiveItem') {
     setDisableAEDState();
   }
-  const content = await fetchAndProcessPlainHtml({ url });
+  const content = await fetchAndProcessPlainHtml({ url, plainHTMLPromise });
   if (!content) {
     const error = new Error('Could not create global navigation. Content not found!');
-    error.tags = 'errorType=error,module=gnav';
+    error.tags = 'gnav';
     error.url = url;
-    lanaLog({ message: error.message, error, tags: 'errorType=error,module=gnav' });
+    error.errorType = 'e';
+    lanaLog({ message: error.message, ...error });
     throw error;
   }
+  setAsyncDropdownCount(content.querySelectorAll('.large-menu').length);
   const gnav = new Gnav({
     content,
     block,
+    newMobileNav,
   });
+  if (newMobileNav && !isDesktop.matches) block.classList.add('new-nav');
   await gnav.init();
+  if (gnav.isLocalNav()) block.classList.add('local-nav');
   block.setAttribute('daa-im', 'true');
   const mepMartech = mep?.martech || '';
   block.setAttribute('daa-lh', `gnav|${getExperienceName()}${mepMartech}`);
   if (isDarkMode()) block.classList.add('feds--dark');
+  block.classList.add('ready');
   return gnav;
 }

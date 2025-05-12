@@ -1,13 +1,14 @@
 /* eslint-disable no-underscore-dangle */
 /* eslint-disable import/no-cycle */
 import { createTag, getMetadata, localizeLink, loadStyle, getConfig } from '../../utils/utils.js';
+import { decorateSectionAnalytics } from '../../martech/attributes.js';
 
-const FOCUSABLES = 'a:not(.hide-video), button, input, textarea, select, details, [tabindex]:not([tabindex="-1"]';
-const CLOSE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+const FOCUSABLES = 'a:not(.hide-video), button:not([disabled], .locale-modal-v2 .paddle), input, textarea, select, details, [tabindex]:not([tabindex="-1"])';
+const CLOSE_ICON = `<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
   <g transform="translate(-10500 3403)">
-    <circle cx="10" cy="10" r="10" transform="translate(10500 -3403)" fill="#707070"/>
-    <line y1="8" x2="8" transform="translate(10506 -3397)" fill="none" stroke="#fff" stroke-width="2"/>
-    <line x1="8" y1="8" transform="translate(10506 -3397)" fill="none" stroke="#fff" stroke-width="2"/>
+    <circle cx="10" cy="10" r="10" transform="translate(10500 -3403)"/>
+    <line y1="8" x2="8" transform="translate(10506 -3397)" fill="none" stroke-width="2"/>
+    <line x1="8" y1="8" transform="translate(10506 -3397)" fill="none" stroke-width="2"/>
   </g>
 </svg>`;
 
@@ -19,7 +20,13 @@ export function findDetails(hash, el) {
   const id = hash.replace('#', '');
   const a = el || document.querySelector(`a[data-modal-hash="${hash}"]`);
   const path = a?.dataset.modalPath || localizeLink(getMetadata(`-${id}`));
-  return { id, path, isHash: hash === window.location.hash };
+  const ariaLabel = a?.getAttribute('aria-label') || document.querySelector(`a[data-modal-id="${id}"]`)?.getAttribute('aria-label');
+  return {
+    id,
+    path,
+    isHash: hash === window.location.hash,
+    title: ariaLabel ? `Modal: ${ariaLabel}` : null,
+  };
 }
 
 function fireAnalyticsEvent(event) {
@@ -99,7 +106,7 @@ function getCustomModal(custom, dialog) {
 async function getPathModal(path, dialog) {
   let href = path;
   if (path.includes('/federal/')) {
-    const { getFederatedUrl } = await import('../../utils/federated.js');
+    const { getFederatedUrl } = await import('../../utils/utils.js');
     href = getFederatedUrl(path);
   }
   const block = createTag('a', { href });
@@ -111,7 +118,7 @@ async function getPathModal(path, dialog) {
 }
 
 export async function getModal(details, custom) {
-  if (!(details?.path || custom)) return null;
+  if (!((details?.path && details?.id) || custom)) return null;
   const { id } = details || custom;
 
   dialogLoadingSet.add(id);
@@ -138,6 +145,7 @@ export async function getModal(details, custom) {
     'aria-label': 'Close',
     'daa-ll': `${analyticsEventName}:modalClose:buttonClose`,
   }, CLOSE_ICON);
+  const focusPlaceholder = createTag('div', { class: 'dialog-focus-placeholder', tabindex: 0 });
 
   const focusVisible = { focusVisible: true };
   const focusablesOnLoad = [...dialog.querySelectorAll(FOCUSABLES)];
@@ -153,20 +161,17 @@ export async function getModal(details, custom) {
     firstFocusable = close;
   }
 
-  dialog.addEventListener('keydown', (event) => {
-    const isShiftKey = event.shiftKey;
-    const isTab = event.key === 'Tab';
-    const isCloseActive = document.activeElement === close;
+  let shiftTabOnClose = false;
 
-    if (!isShiftKey && isTab && isCloseActive) {
-      event.preventDefault();
-      firstFocusable.focus(focusVisible);
-    }
+  close.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab' || !event.shiftKey) return;
+    shiftTabOnClose = true;
+    focusPlaceholder.focus(focusVisible);
+  });
 
-    if (isTab && isShiftKey && document.activeElement === firstFocusable) {
-      event.preventDefault();
-      close.focus(focusVisible);
-    }
+  focusPlaceholder.addEventListener('focus', () => {
+    if (!shiftTabOnClose) close.focus(focusVisible);
+    shiftTabOnClose = false;
   });
 
   close.addEventListener('click', (e) => {
@@ -179,8 +184,9 @@ export async function getModal(details, custom) {
       closeModal(dialog);
     }
   });
-
-  dialog.append(close);
+  decorateSectionAnalytics(dialog, `${id}-modal`, getConfig());
+  dialog.prepend(close);
+  dialog.append(focusPlaceholder);
   document.body.append(dialog);
   dialogLoadingSet.delete(id);
   firstFocusable.focus({ preventScroll: true, ...focusVisible });
@@ -202,14 +208,24 @@ export async function getModal(details, custom) {
 
   const iframe = dialog.querySelector('iframe');
   if (iframe) {
-    if (dialog.classList.contains('commerce-frame')) {
+    if (details?.title) iframe.setAttribute('title', details.title);
+
+    if (dialog.classList.contains('commerce-frame') || dialog.classList.contains('dynamic-height')) {
       const { default: enableCommerceFrameFeatures } = await import('./modal.merch.js');
       await enableCommerceFrameFeatures({ dialog, iframe });
+
+      if (!details?.title) {
+        const commerceDetails = findDetails(window.location.hash, null);
+        const commerceFrameTitle = commerceDetails?.title || null;
+        if (commerceFrameTitle) iframe.setAttribute('title', commerceFrameTitle);
+      }
     } else {
       /* Initially iframe height is set to 0% in CSS for the height auto adjustment feature.
-      For modals without the 'commerce-frame' class height auto adjustment is not applicable */
+      The height auto adjustment feature is applicable only to dialogs
+      with the `commerce-frame` or `dynamic-height` classes */
       iframe.style.height = '100%';
     }
+    if (!custom?.closeEvent) dialog.addEventListener('iframe:modal:closed', () => closeModal(dialog));
   }
 
   return dialog;

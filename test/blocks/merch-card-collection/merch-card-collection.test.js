@@ -1,6 +1,9 @@
 import { expect } from '@esm-bundle/chai';
 import sinon from 'sinon';
 import { setConfig } from '../../../libs/utils/utils.js';
+import '../../../libs/deps/mas/commerce.js';
+
+document.head.appendChild(document.createElement('mas-commerce-service'));
 
 // eslint-disable-next-line no-promise-executor-return
 const delay = (ms = 100) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -159,7 +162,19 @@ describe('Merch Cards', async () => {
     expect(merchCards.outerHTML).to.equal(merchCards.nextElementSibling.outerHTML);
   });
 
-  it('should override cards when asked to', async () => {
+  it('should parse fragmented literals', async () => {
+    const merchCards = await init(document.getElementById('fragmented-literals'));
+    await delay(500);
+    expect(merchCards.outerHTML).to.equal(merchCards.nextElementSibling.outerHTML);
+  });
+
+  it('should parse literals 4 translation too', async () => {
+    const merchCards = await init(document.getElementById('literals-4-translation'));
+    await delay(500);
+    expect(merchCards.outerHTML).to.equal(merchCards.nextElementSibling.outerHTML);
+  });
+
+  it('MEP: should override cards when asked to', async () => {
     const el = document.getElementById('multipleFilters');
     setConfig({
       ...conf,
@@ -193,6 +208,37 @@ describe('Merch Cards', async () => {
     expect(photoshop.title.indexOf('PROMOTION') > 0).to.be.true;
     expect(express.title.indexOf('PROMOTION') > 0).to.be.true;
     expect(merchCards.dataset.overrides).to.equal('promo1.json:/override-photoshop,promo2.json:/override-express');
+  });
+
+  it('MEP: should modify cards when asked to', async () => {
+    const el = document.getElementById('multipleFilters');
+    setConfig({
+      ...conf,
+      mep: {
+        preview: true,
+        commands: [
+          {
+            action: 'remove',
+            selector: 'merch-card h3 #_include-fragments #_all',
+            pageFilter: '',
+            content: 'true',
+            selectorType: 'other',
+            manifestId: 'merchcardupdates.json',
+            targetManifestId: false,
+            modifiers: [
+              'include-fragments',
+              'all',
+            ],
+          },
+        ],
+      },
+    });
+    cards = [...document.querySelectorAll('#cards .merch-card')]
+      .map((merchCardEl) => ({ cardContent: merchCardEl.outerHTML })); // mock cards
+    const merchCards = await init(el);
+    expect(merchCards.filter).to.equal('all');
+    await delay(500);
+    expect(merchCards.querySelectorAll('h3').length).to.equal(0);
   });
 
   it('should localize the query-index url', async () => {
@@ -233,7 +279,7 @@ describe('Merch Cards', async () => {
       await init(el);
       expect(el.innerHTML).to.equal('');
       expect(window.lana.log.calledOnce).to.be.true;
-      expect(window.lana.log.calledWith('Failed to initialize merch cards: Error: No query-index endpoint provided')).to.be.true;
+      expect(window.lana.log.calledWith('Failed to initialize merch cards: No query-index endpoint provided')).to.be.true;
     });
 
     it('fails gracefully if query-index fetch fails ', async () => {
